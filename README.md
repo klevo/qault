@@ -1,6 +1,6 @@
 # qault
 
-Post quantum cryptography key-chain / password manager / secrets vault written in Go.
+Personal, post quantum safe key-chain / password manager / secrets vault written in Go.
 
 Command line interface inspired by [pass](https://www.passwordstore.org/).
 
@@ -24,6 +24,8 @@ I want a simple replacement for the cloud based, big corp tools, like Google or 
 
 ## CLI examples
 
+### Initialization
+
 To create the data storage directory, if it doesn't exist already:
 
 ```sh
@@ -32,6 +34,12 @@ qault init
 
 Outputs the location of the data directory and 0 exit code if directory was created or already exists, otherwise 1.
 
+### Adding secrets to the vault
+
 ```sh
-qault add
+qault add Amazon.com 
 ```
+
+Asks for the secret to store using secure input. If input is empty, asks again.
+
+After non-empty input is received, ask for master password to encrypt with.
