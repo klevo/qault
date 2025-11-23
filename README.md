@@ -1,8 +1,8 @@
 # qault
 
-Personal, post quantum safe key-chain / password manager / secrets vault written in Go.
+Personal, presumably post quantum safe, key-chain / password manager / secrets vault written in Go, using cryptography primitives from the standard library.
 
-This project is not intended for production use and is published for research purposes.
+This project is not intended for production use and is published for research purposes only.
 
 Command line interface inspired by [pass](https://www.passwordstore.org/).
 
