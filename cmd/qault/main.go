@@ -59,6 +59,8 @@ func handleInit() {
 		return
 	}
 
+	fmt.Fprintln(os.Stderr, "Use a strong master secret: 16+ random characters or a 5-7 word diceware-style passphrase to give ~90 bits of entropy; Argon2id slows attackers but offline GPU cracking is still viable with weak passwords.")
+
 	password, err := promptNewMasterPassword()
 	if err != nil {
 		fail(err)
