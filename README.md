@@ -34,8 +34,8 @@ While at it, lets make the storage/encryption post-quantum safe, assuming the PQ
 qault init
 ```
 
-1. If the data directory doesn't exist, it creates it.
-2. If file `.lock` under the data directory doesn't exists, asks to enter master password and to confirm it. If empty string is entered, asks again. Once password is confirmed, generates root encryption key salt, encrypts it with the master password and saves it under data directory as `.lock`.
+1. If the data directory doesn't exist, create it.
+2. If a `.lock` file under the data directory doesn't exists, asks to enter master password and to confirm it. If empty string is entered, asks again. Once password is confirmed, generates root encryption key salt, encrypts it with the master password and saves it under data directory as `.lock`.
 
 Outputs the location of the data directory to stdout.
 
