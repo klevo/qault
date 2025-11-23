@@ -217,7 +217,12 @@ func handleFetch(name string) {
 		}
 
 		if strings.EqualFold(secret.Name, name) {
-			fmt.Fprintln(os.Stdout, secret.Secret)
+			// Avoid adding a trailing newline when piping
+			if term.IsTerminal(int(os.Stdout.Fd())) {
+				fmt.Fprintln(os.Stdout, secret.Secret)
+			} else {
+				fmt.Fprint(os.Stdout, secret.Secret)
+			}
 			return
 		}
 	}
