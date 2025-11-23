@@ -193,7 +193,7 @@ func (c *CLI) handleInit() error {
 
 func (c *CLI) handleAdd(name string) error {
 	if name == "" {
-		return userError("name is required for add")
+		return userError("Name is required")
 	}
 
 	dir, err := ifs.EnsureDataDir()
@@ -237,7 +237,7 @@ func (c *CLI) handleAdd(name string) error {
 		return fatalError(err)
 	}
 
-	fmt.Fprintf(c.Out, "secret saved under %s\n", name)
+	fmt.Fprintf(c.Out, "Secret '%s' added\n", name)
 	return nil
 }
 
@@ -269,7 +269,7 @@ func (c *CLI) handleList() error {
 
 		secret, err := store.DecryptSecret(rootKey, data)
 		if err != nil {
-			return userError(fmt.Sprintf("failed to decrypt secret %s", filepath.Base(path)))
+			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
 		fmt.Fprintln(c.Out, secret.Name)
@@ -280,7 +280,7 @@ func (c *CLI) handleList() error {
 
 func (c *CLI) handleFetch(name string) error {
 	if name == "" {
-		return userError("name is required")
+		return userError("Name is required")
 	}
 
 	dir, err := ifs.EnsureDataDir()
@@ -310,7 +310,7 @@ func (c *CLI) handleFetch(name string) error {
 
 		secret, err := store.DecryptSecret(rootKey, data)
 		if err != nil {
-			return userError(fmt.Sprintf("failed to decrypt secret %s", filepath.Base(path)))
+			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
 		if strings.EqualFold(secret.Name, name) {
@@ -323,7 +323,7 @@ func (c *CLI) handleFetch(name string) error {
 		}
 	}
 
-	return exitError{code: 1, msg: "secret not found"}
+	return exitError{code: 1, msg: "Secret not found"}
 }
 
 func (c *CLI) handleUnlock() error {
@@ -434,7 +434,7 @@ func ensureInitialized(dir string) error {
 	}
 
 	if !hasLock {
-		return errors.New("vault is not initialized")
+		return errors.New("Vault is not initialized")
 	}
 
 	return nil
