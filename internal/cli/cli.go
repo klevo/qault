@@ -355,19 +355,29 @@ func (c *CLI) handleUnlock() error {
 
 	ttl := 5 * time.Minute
 
-	cmd := exec.Command(os.Args[0], "agent")
-	cmd.Env = append(os.Environ(), fmt.Sprintf("QAULT_AGENT_TTL=%d", int64(ttl.Seconds())))
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return fatalError(err)
+	if os.Getenv("QAULT_INLINE_AGENT") == "1" {
+		go func() {
+			_ = agent.Serve(rootKey, ttl, sock)
+		}()
+	} else {
+		cmd := exec.Command(os.Args[0], "agent")
+		cmd.Env = append(os.Environ(), fmt.Sprintf("QAULT_AGENT_TTL=%d", int64(ttl.Seconds())))
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			return fatalError(err)
+		}
+
+		go func() {
+			defer stdin.Close()
+			_ = json.NewEncoder(stdin).Encode(base64.StdEncoding.EncodeToString(rootKey))
+		}()
+
+		if err := cmd.Start(); err != nil {
+			return fatalError(err)
+		}
 	}
 
-	go func() {
-		defer stdin.Close()
-		_ = json.NewEncoder(stdin).Encode(base64.StdEncoding.EncodeToString(rootKey))
-	}()
-
-	if err := cmd.Start(); err != nil {
+	if err := waitForAgent(sock, 10, 50*time.Millisecond); err != nil {
 		return fatalError(err)
 	}
 
@@ -386,6 +396,8 @@ func (c *CLI) handleLock() error {
 		fmt.Fprintln(c.Err, "Vault is already locked")
 		return nil
 	}
+
+	_ = waitForAgentStop(sock, 10, 50*time.Millisecond)
 
 	fmt.Fprintln(c.Out, "Vault locked")
 	return nil
@@ -497,6 +509,26 @@ func unlockRootKey(dir, password string) ([]byte, error) {
 	}
 
 	return rootKey, nil
+}
+
+func waitForAgent(sock string, attempts int, delay time.Duration) error {
+	for i := 0; i < attempts; i++ {
+		if _, ok, _ := agent.FetchRootKey(sock); ok {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return errors.New("agent did not start")
+}
+
+func waitForAgentStop(sock string, attempts int, delay time.Duration) error {
+	for i := 0; i < attempts; i++ {
+		if _, ok, _ := agent.FetchRootKey(sock); !ok {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return errors.New("agent did not stop")
 }
 
 type TerminalPrompter struct {
