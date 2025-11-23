@@ -285,7 +285,7 @@ func handleUnlock() {
 	sock := agent.SocketPath(dir)
 
 	if _, ok, _ := agent.FetchRootKey(sock); ok {
-		fmt.Fprintf(os.Stdout, "agent already running at %s\n", sock)
+		fmt.Fprintf(os.Stdout, "Vault is already unlocked\n")
 		return
 	}
 
@@ -313,7 +313,8 @@ func handleUnlock() {
 		fail(err)
 	}
 
-	fmt.Fprintf(os.Stdout, "agent started: socket at %s, TTL %s\n", sock, ttl)
+	// fmt.Fprintf(os.Stdout, "Agent started: socket at %s, TTL %s\n", sock, ttl)
+	fmt.Fprintf(os.Stdout, "Vault unlocked for %s\n", ttl)
 }
 
 func handleLock() {
@@ -324,11 +325,11 @@ func handleLock() {
 	sock := agent.SocketPath(dir)
 
 	if err := agent.Lock(sock); err != nil {
-		fmt.Fprintln(os.Stderr, "agent not running")
+		fmt.Fprintln(os.Stderr, "Vault is already locked")
 		return
 	}
 
-	fmt.Fprintln(os.Stdout, "agent locked")
+	fmt.Fprintln(os.Stdout, "Vault locked")
 }
 
 func serveAgent() error {
