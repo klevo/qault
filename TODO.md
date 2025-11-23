@@ -1,0 +1,4 @@
+- [ ] Solve newline issue when fetching a password, when piping to another program.
+- [ ] Handle adding secret with already existing name.
+- [ ] Tests.
+- [ ] Agent that allows the keychain to be unlocked for a few minutes.

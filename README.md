@@ -67,3 +67,11 @@ qualt [NAME]
 1. Asks for master password and confirms it by decrypting `.lock` from data directory. If decryption fails, exit with 1 and informs that master key is wrong.
 2. Loads and starts decrypting all UUID v7 named files under data directory. Stops when it finds a case-insensitive match based on the name. Outputs the value of `secret:` to stdout and exits.
 3. If the name is not found, exit with code 1 and inform about it to stderr.
+
+## Development
+
+Running the tool in development:
+
+```sh
+go run ./cmd/qault
+```
