@@ -56,7 +56,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if args[0] == "serve-agent" {
+		if args[0] == "agent" {
 			if err := serveAgent(); err != nil {
 				fail(err)
 			}
@@ -295,7 +295,7 @@ func handleUnlock() {
 
 	ttl := 5 * time.Minute
 
-	cmd := exec.Command(os.Args[0], "serve-agent")
+	cmd := exec.Command(os.Args[0], "agent")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("QAULT_AGENT_TTL=%d", int64(ttl.Seconds())))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
