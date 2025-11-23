@@ -77,7 +77,7 @@ qualt [NAME]
 qualt unlock
 ```
 
-Upon entering and validating master key, spawns an agent, that caches the derived encryption key, listing on a socket in the data dir. The agent self-terminates after 5 minutes. Or you can terminate it and thus lock your vault with:
+Upon entering and validating master key, spawns an agent, that caches the derived encryption key, listing on a socket in the data dir. The agent self-terminates after 5 minutes. Or you can terminate it manually and thus lock your vault with:
 
 ```sh
 qualt lock
