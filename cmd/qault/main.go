@@ -23,7 +23,7 @@ import (
 	"qault/internal/store"
 )
 
-var errWrongMasterKey = errors.New("master key is wrong")
+var errWrongMasterKey = errors.New("Incorrect master password")
 
 type lockFile struct {
 	Salt       string `json:"salt"`
@@ -488,7 +488,7 @@ func readHiddenInput(prompt string) (string, error) {
 
 func handleMasterKeyError(err error) {
 	if errors.Is(err, errWrongMasterKey) {
-		fmt.Fprintln(os.Stderr, "master key is wrong")
+		fmt.Fprintln(os.Stderr, "Incorrect master password")
 		os.Exit(1)
 	}
 
