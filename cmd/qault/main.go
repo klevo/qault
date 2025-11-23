@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -448,9 +450,33 @@ func promptNonEmpty(prompt string) (string, error) {
 	}
 }
 
+// Hidden input capture with restore functionality on SIGTERM,
+// so that terminal doesn't get stuck with hidden input.
 func readHiddenInput(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
-	input, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fd := int(os.Stdin.Fd())
+
+	state, _ := term.GetState(fd)
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	restore := func() {
+		if state != nil {
+			_ = term.Restore(fd, state)
+		}
+	}
+	defer func() {
+		signal.Stop(sigs)
+		restore()
+	}()
+
+	go func() {
+		if _, ok := <-sigs; ok {
+			restore()
+			os.Exit(1)
+		}
+	}()
+
+	input, err := term.ReadPassword(fd)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", err
