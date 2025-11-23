@@ -1,5 +1,5 @@
-- [ ] Solve newline issue when fetching a password, when piping to another program.
+- [x] Solve newline issue when fetching a password, when piping to another program.
 - [ ] Handle adding secret with already existing name.
-- [ ] Tests.
-- [ ] Agent that allows the keychain to be unlocked for a few minutes.
+- [x] Tests.
+- [x] Agent that allows the keychain to be unlocked for a few minutes.
 - [ ] Interrupt during entering master password causes terminal input to remain hidden.

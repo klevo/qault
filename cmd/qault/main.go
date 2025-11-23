@@ -6,13 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
+	"qault/internal/agent"
 	icrypto "qault/internal/crypto"
 	ifs "qault/internal/fs"
 	"qault/internal/store"
@@ -38,16 +41,33 @@ func main() {
 			return
 		}
 
+		if args[0] == "unlock" {
+			handleUnlock()
+			return
+		}
+
+		if args[0] == "lock" {
+			handleLock()
+			return
+		}
+
 		if args[0] == "add" {
 			fmt.Fprintln(os.Stderr, "name is required for add")
 			os.Exit(1)
+		}
+
+		if args[0] == "serve-agent" {
+			if err := serveAgent(); err != nil {
+				fail(err)
+			}
+			return
 		}
 
 		handleFetch(args[0])
 	case len(args) == 2 && args[0] == "add":
 		handleAdd(args[1])
 	default:
-		fmt.Fprintln(os.Stderr, "usage: qault init | qault add [NAME] | qault [NAME]")
+		fmt.Fprintln(os.Stderr, "usage: qault init | qault unlock | qault lock | qault add [NAME] | qault [NAME]")
 		os.Exit(1)
 	}
 }
@@ -127,12 +147,7 @@ func handleAdd(name string) {
 		fail(err)
 	}
 
-	password, err := promptMasterPassword()
-	if err != nil {
-		fail(err)
-	}
-
-	rootKey, err := unlockRootKey(dir, password)
+	rootKey, err := getRootKeyWithFallback(dir)
 	if err != nil {
 		handleMasterKeyError(err)
 	}
@@ -177,12 +192,7 @@ func handleList() {
 		fail(err)
 	}
 
-	password, err := promptMasterPassword()
-	if err != nil {
-		fail(err)
-	}
-
-	rootKey, err := unlockRootKey(dir, password)
+	rootKey, err := getRootKeyWithFallback(dir)
 	if err != nil {
 		handleMasterKeyError(err)
 	}
@@ -223,12 +233,7 @@ func handleFetch(name string) {
 		fail(err)
 	}
 
-	password, err := promptMasterPassword()
-	if err != nil {
-		fail(err)
-	}
-
-	rootKey, err := unlockRootKey(dir, password)
+	rootKey, err := getRootKeyWithFallback(dir)
 	if err != nil {
 		handleMasterKeyError(err)
 	}
@@ -265,6 +270,101 @@ func handleFetch(name string) {
 	os.Exit(1)
 }
 
+func handleUnlock() {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		fail(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		fail(err)
+	}
+
+	sock := agent.SocketPath(dir)
+
+	if _, ok, _ := agent.FetchRootKey(sock); ok {
+		fmt.Fprintf(os.Stdout, "agent already running at %s\n", sock)
+		return
+	}
+
+	password := mustPromptMasterPassword()
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
+		handleMasterKeyError(err)
+	}
+
+	ttl := 5 * time.Minute
+
+	cmd := exec.Command(os.Args[0], "serve-agent")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("QAULT_AGENT_TTL=%d", int64(ttl.Seconds())))
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		fail(err)
+	}
+
+	go func() {
+		defer stdin.Close()
+		_ = json.NewEncoder(stdin).Encode(base64.StdEncoding.EncodeToString(rootKey))
+	}()
+
+	if err := cmd.Start(); err != nil {
+		fail(err)
+	}
+
+	fmt.Fprintf(os.Stdout, "agent started: socket at %s, TTL %s\n", sock, ttl)
+}
+
+func handleLock() {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		fail(err)
+	}
+	sock := agent.SocketPath(dir)
+
+	if err := agent.Lock(sock); err != nil {
+		fmt.Fprintln(os.Stderr, "agent not running")
+		return
+	}
+
+	fmt.Fprintln(os.Stdout, "agent locked")
+}
+
+func serveAgent() error {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return err
+	}
+	sock := agent.SocketPath(dir)
+
+	ttl := 5 * time.Minute
+	if v := os.Getenv("QAULT_AGENT_TTL"); v != "" {
+		if seconds, err := parseTTLSeconds(v); err == nil {
+			ttl = seconds
+		}
+	}
+
+	decoder := json.NewDecoder(os.Stdin)
+	var keyB64 string
+	if err := decoder.Decode(&keyB64); err != nil {
+		return err
+	}
+
+	rootKey, err := base64.StdEncoding.DecodeString(keyB64)
+	if err != nil {
+		return err
+	}
+
+	return agent.Serve(rootKey, ttl, sock)
+}
+
+func parseTTLSeconds(v string) (time.Duration, error) {
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(n) * time.Second, nil
+}
+
 func ensureInitialized(dir string) error {
 	hasLock, err := ifs.HasLock(dir)
 	if err != nil {
@@ -278,8 +378,35 @@ func ensureInitialized(dir string) error {
 	return nil
 }
 
+func getRootKeyWithFallback(dir string) ([]byte, error) {
+	sock := agent.SocketPath(dir)
+	if key, ok, _ := agent.FetchRootKey(sock); ok {
+		return key, nil
+	}
+
+	password, err := promptMasterPassword()
+	if err != nil {
+		return nil, err
+	}
+
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
+		return nil, err
+	}
+
+	return rootKey, nil
+}
+
 func promptMasterPassword() (string, error) {
 	return promptNonEmpty("Master password: ")
+}
+
+func mustPromptMasterPassword() string {
+	p, err := promptMasterPassword()
+	if err != nil {
+		fail(err)
+	}
+	return p
 }
 
 func promptNewMasterPassword() (string, error) {
