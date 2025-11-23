@@ -70,8 +70,14 @@ qualt [NAME]
 
 ## Development
 
-Running the tool in development:
+### Running the CLI
 
 ```sh
 go run ./cmd/qault
+```
+
+### Running tests
+
+```sh
+go test ./...
 ```
