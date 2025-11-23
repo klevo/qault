@@ -5,7 +5,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -21,61 +20,61 @@ const (
 	argonMemory = 64 * 1024 // in KiB
 )
 
-type envelope struct {
-	Salt       string `json:"salt"`
+type Envelope struct {
 	Nonce      string `json:"nonce"`
 	Ciphertext string `json:"ciphertext"`
 }
 
-func Encrypt(password string, plaintext []byte) ([]byte, error) {
-	salt := make([]byte, saltSize)
-	if _, err := rand.Read(salt); err != nil {
+func GenerateSalt() ([]byte, error) {
+	buf := make([]byte, saltSize)
+	if _, err := rand.Read(buf); err != nil {
 		return nil, fmt.Errorf("salt: %w", err)
 	}
+	return buf, nil
+}
 
+func DeriveRootKey(password string, salt []byte) ([]byte, error) {
+	if len(salt) != saltSize {
+		return nil, errors.New("salt: invalid length")
+	}
 	key := deriveKey([]byte(password), salt)
+	return key, nil
+}
+
+func EncryptWithKey(key []byte, plaintext []byte) (Envelope, error) {
+	if len(key) != keySize {
+		return Envelope{}, errors.New("key length invalid")
+	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("cipher: %w", err)
+		return Envelope{}, fmt.Errorf("cipher: %w", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("gcm: %w", err)
+		return Envelope{}, fmt.Errorf("gcm: %w", err)
 	}
 
 	nonce := make([]byte, nonceSize)
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("nonce: %w", err)
+		return Envelope{}, fmt.Errorf("nonce: %w", err)
 	}
 
 	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
 
-	payload := envelope{
-		Salt:       base64.StdEncoding.EncodeToString(salt),
+	return Envelope{
 		Nonce:      base64.StdEncoding.EncodeToString(nonce),
 		Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
-	}
-
-	return json.Marshal(payload)
+	}, nil
 }
 
-func Decrypt(password string, data []byte) ([]byte, error) {
-	var payload envelope
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("payload: %w", err)
+func DecryptWithKey(key []byte, env Envelope) ([]byte, error) {
+	if len(key) != keySize {
+		return nil, errors.New("key length invalid")
 	}
 
-	salt, err := base64.StdEncoding.DecodeString(payload.Salt)
-	if err != nil {
-		return nil, fmt.Errorf("salt: %w", err)
-	}
-	if len(salt) != saltSize {
-		return nil, errors.New("salt: invalid length")
-	}
-
-	nonce, err := base64.StdEncoding.DecodeString(payload.Nonce)
+	nonce, err := base64.StdEncoding.DecodeString(env.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("nonce: %w", err)
 	}
@@ -83,12 +82,10 @@ func Decrypt(password string, data []byte) ([]byte, error) {
 		return nil, errors.New("nonce: invalid length")
 	}
 
-	ciphertext, err := base64.StdEncoding.DecodeString(payload.Ciphertext)
+	ciphertext, err := base64.StdEncoding.DecodeString(env.Ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("ciphertext: %w", err)
 	}
-
-	key := deriveKey([]byte(password), salt)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {

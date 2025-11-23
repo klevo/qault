@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +19,12 @@ import (
 )
 
 var errWrongMasterKey = errors.New("master key is wrong")
+
+type lockFile struct {
+	Salt       string `json:"salt"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
 
 func main() {
 	args := os.Args[1:]
@@ -71,12 +79,33 @@ func handleInit() {
 		fail(err)
 	}
 
-	encrypted, err := icrypto.Encrypt(password, []byte(lockValue))
+	salt, err := icrypto.GenerateSalt()
 	if err != nil {
 		fail(err)
 	}
 
-	if err := store.WriteFile(ifs.LockPath(dir), encrypted); err != nil {
+	rootKey, err := icrypto.DeriveRootKey(password, salt)
+	if err != nil {
+		fail(err)
+	}
+
+	env, err := icrypto.EncryptWithKey(rootKey, []byte(lockValue))
+	if err != nil {
+		fail(err)
+	}
+
+	lock := lockFile{
+		Salt:       base64.StdEncoding.EncodeToString(salt),
+		Nonce:      env.Nonce,
+		Ciphertext: env.Ciphertext,
+	}
+
+	payload, err := json.Marshal(lock)
+	if err != nil {
+		fail(err)
+	}
+
+	if err := store.WriteFile(ifs.LockPath(dir), payload); err != nil {
 		fail(err)
 	}
 
@@ -103,7 +132,8 @@ func handleAdd(name string) {
 		fail(err)
 	}
 
-	if err := verifyMasterPassword(dir, password); err != nil {
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
 		handleMasterKeyError(err)
 	}
 
@@ -120,7 +150,7 @@ func handleAdd(name string) {
 		UpdatedAt: now,
 	}
 
-	encrypted, err := store.EncryptSecret(password, s)
+	encrypted, err := store.EncryptSecret(rootKey, s)
 	if err != nil {
 		fail(err)
 	}
@@ -152,7 +182,8 @@ func handleList() {
 		fail(err)
 	}
 
-	if err := verifyMasterPassword(dir, password); err != nil {
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
 		handleMasterKeyError(err)
 	}
 
@@ -167,7 +198,7 @@ func handleList() {
 			fail(err)
 		}
 
-		secret, err := store.DecryptSecret(password, data)
+		secret, err := store.DecryptSecret(rootKey, data)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to decrypt secret %s\n", filepath.Base(path))
 			os.Exit(1)
@@ -197,7 +228,8 @@ func handleFetch(name string) {
 		fail(err)
 	}
 
-	if err := verifyMasterPassword(dir, password); err != nil {
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
 		handleMasterKeyError(err)
 	}
 
@@ -212,7 +244,7 @@ func handleFetch(name string) {
 			fail(err)
 		}
 
-		secret, err := store.DecryptSecret(password, data)
+		secret, err := store.DecryptSecret(rootKey, data)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to decrypt secret %s\n", filepath.Base(path))
 			os.Exit(1)
@@ -231,19 +263,6 @@ func handleFetch(name string) {
 
 	fmt.Fprintln(os.Stderr, "secret not found")
 	os.Exit(1)
-}
-
-func verifyMasterPassword(dir, password string) error {
-	data, err := store.ReadFile(ifs.LockPath(dir))
-	if err != nil {
-		return err
-	}
-
-	if _, err := icrypto.Decrypt(password, data); err != nil {
-		return errWrongMasterKey
-	}
-
-	return nil
 }
 
 func ensureInitialized(dir string) error {
@@ -320,6 +339,39 @@ func handleMasterKeyError(err error) {
 	}
 
 	fail(err)
+}
+
+func unlockRootKey(dir, password string) ([]byte, error) {
+	data, err := store.ReadFile(ifs.LockPath(dir))
+	if err != nil {
+		return nil, err
+	}
+
+	var lock lockFile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return nil, err
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
+	if err != nil {
+		return nil, err
+	}
+
+	rootKey, err := icrypto.DeriveRootKey(password, salt)
+	if err != nil {
+		return nil, err
+	}
+
+	env := icrypto.Envelope{
+		Nonce:      lock.Nonce,
+		Ciphertext: lock.Ciphertext,
+	}
+
+	if _, err := icrypto.DecryptWithKey(rootKey, env); err != nil {
+		return nil, errWrongMasterKey
+	}
+
+	return rootKey, nil
 }
 
 func fail(err error) {

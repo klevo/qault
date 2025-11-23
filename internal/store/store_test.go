@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	icrypto "qault/internal/crypto"
 )
 
 func TestEncryptDecryptSecret(t *testing.T) {
@@ -15,14 +17,22 @@ func TestEncryptDecryptSecret(t *testing.T) {
 		UpdatedAt: time.Unix(200, 0),
 	}
 
-	password := "password"
+	salt, err := icrypto.GenerateSalt()
+	if err != nil {
+		t.Fatalf("GenerateSalt error: %v", err)
+	}
 
-	encrypted, err := EncryptSecret(password, secret)
+	rootKey, err := icrypto.DeriveRootKey("password", salt)
+	if err != nil {
+		t.Fatalf("DeriveRootKey error: %v", err)
+	}
+
+	encrypted, err := EncryptSecret(rootKey, secret)
 	if err != nil {
 		t.Fatalf("EncryptSecret error: %v", err)
 	}
 
-	decrypted, err := DecryptSecret(password, encrypted)
+	decrypted, err := DecryptSecret(rootKey, encrypted)
 	if err != nil {
 		t.Fatalf("DecryptSecret error: %v", err)
 	}

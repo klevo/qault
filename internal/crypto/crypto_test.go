@@ -6,17 +6,26 @@ import (
 )
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
-	password := "correct horse"
-	plaintext := []byte("secret payload")
-
-	ciphertext, err := Encrypt(password, plaintext)
+	salt, err := GenerateSalt()
 	if err != nil {
-		t.Fatalf("Encrypt error: %v", err)
+		t.Fatalf("GenerateSalt error: %v", err)
 	}
 
-	decrypted, err := Decrypt(password, ciphertext)
+	key, err := DeriveRootKey("correct horse", salt)
 	if err != nil {
-		t.Fatalf("Decrypt error: %v", err)
+		t.Fatalf("DeriveRootKey error: %v", err)
+	}
+
+	plaintext := []byte("secret payload")
+
+	env, err := EncryptWithKey(key, plaintext)
+	if err != nil {
+		t.Fatalf("EncryptWithKey error: %v", err)
+	}
+
+	decrypted, err := DecryptWithKey(key, env)
+	if err != nil {
+		t.Fatalf("DecryptWithKey error: %v", err)
 	}
 
 	if string(decrypted) != string(plaintext) {
@@ -25,17 +34,28 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 }
 
 func TestDecryptWithWrongPassword(t *testing.T) {
-	password := "correct horse"
-	wrong := "wrong battery"
-	plaintext := []byte("secret payload")
-
-	ciphertext, err := Encrypt(password, plaintext)
+	salt, err := GenerateSalt()
 	if err != nil {
-		t.Fatalf("Encrypt error: %v", err)
+		t.Fatalf("GenerateSalt error: %v", err)
 	}
 
-	if _, err := Decrypt(wrong, ciphertext); err == nil {
-		t.Fatalf("Decrypt should fail with wrong password")
+	key, err := DeriveRootKey("correct horse", salt)
+	if err != nil {
+		t.Fatalf("DeriveRootKey error: %v", err)
+	}
+
+	wrongKey, err := DeriveRootKey("wrong battery", salt)
+	if err != nil {
+		t.Fatalf("DeriveRootKey wrong error: %v", err)
+	}
+
+	env, err := EncryptWithKey(key, []byte("secret payload"))
+	if err != nil {
+		t.Fatalf("EncryptWithKey error: %v", err)
+	}
+
+	if _, err := DecryptWithKey(wrongKey, env); err == nil {
+		t.Fatalf("DecryptWithKey should fail with wrong key")
 	}
 }
 

@@ -16,17 +16,27 @@ type Secret struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-func EncryptSecret(password string, s Secret) ([]byte, error) {
+func EncryptSecret(rootKey []byte, s Secret) ([]byte, error) {
 	payload, err := json.Marshal(s)
 	if err != nil {
 		return nil, fmt.Errorf("secret: %w", err)
 	}
 
-	return icrypto.Encrypt(password, payload)
+	env, err := icrypto.EncryptWithKey(rootKey, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(env)
 }
 
-func DecryptSecret(password string, data []byte) (Secret, error) {
-	plaintext, err := icrypto.Decrypt(password, data)
+func DecryptSecret(rootKey []byte, data []byte) (Secret, error) {
+	var env icrypto.Envelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return Secret{}, fmt.Errorf("payload: %w", err)
+	}
+
+	plaintext, err := icrypto.DecryptWithKey(rootKey, env)
 	if err != nil {
 		return Secret{}, err
 	}
