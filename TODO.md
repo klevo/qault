@@ -1,4 +1,5 @@
 - [x] Solve newline issue when fetching a password, when piping to another program.
+- [ ] main.go tests
 - [ ] Handle adding secret with already existing name.
 - [x] Tests.
 - [x] Agent that allows the keychain to be unlocked for a few minutes.
