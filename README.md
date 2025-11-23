@@ -4,10 +4,17 @@ Post quantum cryptography key-chain / password manager / secrets vault written i
 
 Command line interface inspired by [pass](https://www.passwordstore.org/).
 
+## Motivation
+
+I want a simple replacement for the cloud based, big corp tools, like Google or Apple password managers. I'd like to be able to recover access to all my digital services, even in case I loose all my devices, by just remembering a master password and having access to a remote Git repository. While at it, let's make the storage/encryption post-quantum safe. 
+
 ## Goals
 
+* Command line interface following simple UNIX philosophy.
 * Unlock using a master password.
 * Future proofed by utilizing post-quantum cryptography from Go's standard library.
+* Hardened for production use.
+* [Git](https://git-scm.com/) integration, for remote storage and synchronization between multiple machines.
 
 ## Design
 
