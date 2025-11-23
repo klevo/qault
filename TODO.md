@@ -2,5 +2,9 @@
 - [ ] Handle adding secret with already existing name.
 - [x] Tests.
 - [x] Agent that allows the keychain to be unlocked for a few minutes.
-- [ ] Interrupt during entering master password causes terminal input to remain hidden.
+- [x] Interrupt during entering master password causes terminal input to remain hidden.
 - [ ] Implement change-password command
+- [ ] Multi line input / $EDITOR support
+- [ ] Edit existing secrets
+- [ ] Delete secrets
+- [ ] Git integration
