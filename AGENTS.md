@@ -13,6 +13,7 @@ This repository hosts **qault**, a Go-based CLI password manager hardened for po
 - `go vet ./...` — catch common correctness issues.
 - `gofmt -w ./...` — enforce canonical formatting before commits.
 - `go run ./cmd/qault --help` — exercise the CLI during development; add flags for specific flows.
+- When downloading dependencies or doing `go mod tidy`, give generous timeout to allow for the downloads to complete.
 
 ## Coding Style & Naming Conventions
 - Follow standard Go style: tabs for indentation, `CamelCase` for exported identifiers, `snake_case` for file names when grouping variants, and short, imperative package doc comments.
