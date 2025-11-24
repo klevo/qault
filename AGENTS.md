@@ -7,6 +7,7 @@ This repository hosts **qault**, a Go-based CLI password manager hardened for po
 - Co-locate tests with source files (`foo.go` alongside `foo_test.go`); fixture data lives under `testdata/`.
 - Integration/e2e tests live under `test/`.
 - Use go version 1.25.4 (which includes PQ crypto).
+- After making changes to functionality update `README.md` if any of the user facing instructions changed. 
 
 ## Build, Test, and Development Commands
 - `go test ./...` — run all unit tests.

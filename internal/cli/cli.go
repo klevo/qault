@@ -77,6 +77,12 @@ func NewDefault() *CLI {
 	}
 }
 
+const (
+	colorBlue  = "\033[34m"
+	colorTeal  = "\033[36m"
+	colorReset = "\033[0m"
+)
+
 func (c *CLI) Run(args []string) int {
 	if err := c.dispatch(args); err != nil {
 		return c.handleError(err)
@@ -362,7 +368,8 @@ func (c *CLI) handleList() error {
 			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		fmt.Fprintln(c.Out, formatNames(secret.Name))
+		useColor := isTerminal(c.Out)
+		fmt.Fprintln(c.Out, formatListNames(secret.Name, useColor))
 	}
 
 	return nil
@@ -668,21 +675,47 @@ func namesEqualFold(a, b []string) bool {
 	return true
 }
 
+func formatListNames(names []string, useColor bool) string {
+	if len(names) == 0 {
+		return ""
+	}
+
+	parts := formatNameParts(names)
+	if useColor && len(parts) > 1 {
+		colors := []string{colorBlue, colorTeal}
+		colorIdx := 0
+		for i := 0; i < len(parts)-1; i++ {
+			parts[i] = colors[colorIdx] + parts[i] + colorReset
+			colorIdx = (colorIdx + 1) % len(colors)
+		}
+	}
+
+	return strings.Join(parts, " ")
+}
+
 func formatNames(names []string) string {
 	if len(names) == 0 {
 		return ""
 	}
 
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
-		if hasWhitespace(name) {
-			parts = append(parts, strconv.Quote(name))
-			continue
-		}
-		parts = append(parts, name)
-	}
+	parts := formatNameParts(names)
 
 	return strings.Join(parts, " ")
+}
+
+func formatNameParts(names []string) []string {
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, formatNamePart(name))
+	}
+	return parts
+}
+
+func formatNamePart(name string) string {
+	if hasWhitespace(name) {
+		return strconv.Quote(name)
+	}
+	return name
 }
 
 func hasWhitespace(value string) bool {
