@@ -710,7 +710,7 @@ func formatListNames(names []string, useColor bool) string {
 
 	parts := formatNameParts(names)
 	if useColor && len(parts) > 1 {
-		colors := []string{colorBlue, colorTeal}
+		colors := []string{colorTeal, colorBlue}
 		colorIdx := 0
 		for i := 0; i < len(parts)-1; i++ {
 			parts[i] = colors[colorIdx] + parts[i] + colorReset
