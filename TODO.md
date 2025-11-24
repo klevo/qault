@@ -8,4 +8,4 @@
 - [ ] Multi line input / $EDITOR support
 - [ ] Edit existing secrets
 - [ ] Delete secrets
-- [ ] Git integration
+- [ ] Git integration, with HTTPS username/password fetch from the key-chain support
