@@ -85,13 +85,13 @@ qault mv OLD... --to NEW...
 
 Renames the secret from the old name components to the new ones (case-insensitive match on the source, destination must not already exist).
 
-### Editing an existing secret
+### Changing the master password
 
 ```sh
-qault edit NAME...
+qault change-master-password
 ```
 
-Replaces the secret value (prompted as `New secret:`) for the matched entry without altering the name or OTP.
+Asks for the current master password, then prompts twice for the new one, and re-encrypts every secret plus the lock file with the new key. Fails if the current password is incorrect.
 
 ### Listing secrets
 

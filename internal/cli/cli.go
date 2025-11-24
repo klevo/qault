@@ -134,6 +134,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleEditArgs(args[1:])
 	case "recent":
 		return c.handleRecent()
+	case "change-master-password":
+		return c.handleChangeMasterPassword()
 	default:
 		return c.handleFetchArgs(args)
 	}
@@ -227,6 +229,58 @@ func (c *CLI) handleEditArgs(args []string) error {
 	return c.handleEdit(names, useEditor)
 }
 
+func (c *CLI) handleChangeMasterPassword() error {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	lock, salt, err := readLockFile(dir)
+	if err != nil {
+		return err
+	}
+
+	currentPassword, err := c.promptWithLabel("Current master password: ")
+	if err != nil {
+		return fatalError(err)
+	}
+
+	oldRootKey, lockValue, err := deriveLockValue(lock, salt, currentPassword)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	newPassword, err := c.promptNewPassword()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	newSalt, err := icrypto.GenerateSalt()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	newRootKey, err := icrypto.DeriveRootKey(newPassword, newSalt)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := reencryptSecrets(dir, oldRootKey, newRootKey); err != nil {
+		return err
+	}
+
+	if err := writeLockFile(dir, lockValue, newSalt, newRootKey); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(c.Out, "Master password updated")
+	return nil
+}
+
 func (c *CLI) handleMoveArgs(args []string) error {
 	oldNames, newNames, err := parseMoveArgs(args)
 	if err != nil {
@@ -304,6 +358,36 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 
 	if err := store.WriteFile(path, encrypted); err != nil {
 		return fatalError(err)
+	}
+
+	return nil
+}
+
+func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) error {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return fatalError(err)
+		}
+
+		secret, err := store.DecryptSecret(oldRootKey, data)
+		if err != nil {
+			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		encrypted, err := store.EncryptSecret(newRootKey, secret)
+		if err != nil {
+			return fatalError(err)
+		}
+
+		if err := store.WriteFile(path, encrypted); err != nil {
+			return fatalError(err)
+		}
 	}
 
 	return nil
@@ -1067,6 +1151,36 @@ func buildEditorCommand(editor, path string) *exec.Cmd {
 	return exec.Command(editor, path)
 }
 
+func (c *CLI) promptWithLabel(label string) (string, error) {
+	if tp, ok := c.Prompter.(*TerminalPrompter); ok {
+		return tp.promptNonEmpty(label)
+	}
+	return c.Prompter.MasterPassword()
+}
+
+func (c *CLI) promptNewPassword() (string, error) {
+	if tp, ok := c.Prompter.(*TerminalPrompter); ok {
+		for {
+			first, err := tp.promptNonEmpty("New master password: ")
+			if err != nil {
+				return "", err
+			}
+
+			second, err := tp.promptNonEmpty("Confirm new master password: ")
+			if err != nil {
+				return "", err
+			}
+
+			if first == second {
+				return first, nil
+			}
+
+			fmt.Fprintln(tp.Err, "passwords do not match")
+		}
+	}
+	return c.Prompter.NewMasterPassword()
+}
+
 func unlockRootKey(dir, password string) ([]byte, error) {
 	data, err := store.ReadFile(ifs.LockPath(dir))
 	if err != nil {
@@ -1243,4 +1357,66 @@ func isTerminal(w io.Writer) bool {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	return false
+}
+
+func readLockFile(dir string) (lockFile, []byte, error) {
+	data, err := store.ReadFile(ifs.LockPath(dir))
+	if err != nil {
+		return lockFile{}, nil, err
+	}
+
+	var lock lockFile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return lockFile{}, nil, err
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
+	if err != nil {
+		return lockFile{}, nil, err
+	}
+
+	return lock, salt, nil
+}
+
+func deriveLockValue(lock lockFile, salt []byte, password string) ([]byte, string, error) {
+	rootKey, err := icrypto.DeriveRootKey(password, salt)
+	if err != nil {
+		return nil, "", err
+	}
+
+	env := icrypto.Envelope{
+		Nonce:      lock.Nonce,
+		Ciphertext: lock.Ciphertext,
+	}
+
+	value, err := icrypto.DecryptWithKey(rootKey, env)
+	if err != nil {
+		return nil, "", errWrongMasterKey
+	}
+
+	return rootKey, string(value), nil
+}
+
+func writeLockFile(dir, lockValue string, salt, rootKey []byte) error {
+	env, err := icrypto.EncryptWithKey(rootKey, []byte(lockValue))
+	if err != nil {
+		return fatalError(err)
+	}
+
+	lock := lockFile{
+		Salt:       base64.StdEncoding.EncodeToString(salt),
+		Nonce:      env.Nonce,
+		Ciphertext: env.Ciphertext,
+	}
+
+	payload, err := json.Marshal(lock)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := store.WriteFile(ifs.LockPath(dir), payload); err != nil {
+		return fatalError(err)
+	}
+
+	return nil
 }

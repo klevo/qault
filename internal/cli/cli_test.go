@@ -520,6 +520,89 @@ func TestEditSecret(t *testing.T) {
 	}
 }
 
+func TestChangeMasterPassword(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"oldpw", "oldpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"oldpw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	changePrompter := &fakePrompter{
+		master:    []string{"oldpw"},
+		newMaster: []string{"newpw", "newpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, changePrompter, "change-master-password"); exit != 0 {
+		t.Fatalf("change-master-password failed: %s", errOut)
+	}
+
+	oldFetchPrompter := &fakePrompter{
+		master: []string{"oldpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, oldFetchPrompter, "email"); exit == 0 {
+		t.Fatalf("expected fetch with old password to fail")
+	} else if !strings.Contains(errOut, "Incorrect master password") {
+		t.Fatalf("unexpected error with old password: %q", errOut)
+	}
+
+	newFetchPrompter := &fakePrompter{
+		master: []string{"newpw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, newFetchPrompter, "email"); exit != 0 {
+		t.Fatalf("fetch with new password failed: %s", errOut)
+	} else if out != "secret" {
+		t.Fatalf("unexpected fetch output with new password: %q", out)
+	}
+}
+
+func TestChangeMasterPasswordRejectsWrongCurrent(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"oldpw", "oldpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"oldpw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	changePrompter := &fakePrompter{
+		master:    []string{"wrong"},
+		newMaster: []string{"newpw", "newpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, changePrompter, "change-master-password"); exit == 0 {
+		t.Fatalf("expected change-master-password to fail with wrong current password")
+	} else if !strings.Contains(errOut, "Incorrect master password") {
+		t.Fatalf("unexpected error: %q", errOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"oldpw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, fetchPrompter, "email"); exit != 0 {
+		t.Fatalf("fetch with original password failed after failed change: %s", errOut)
+	} else if out != "secret" {
+		t.Fatalf("unexpected fetch output after failed change: %q", out)
+	}
+}
+
 func TestEditSecretWithEditor(t *testing.T) {
 	dataDir := t.TempDir()
 	editor := writeEditorScript(t, "edited-via-editor")
