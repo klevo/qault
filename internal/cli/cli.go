@@ -125,6 +125,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.serveAgent()
 	case "add":
 		return c.handleAddArgs(args[1:])
+	case "rm":
+		return c.handleRemoveArgs(args[1:])
 	default:
 		return c.handleFetchArgs(args)
 	}
@@ -202,6 +204,44 @@ func (c *CLI) handleAddArgs(args []string) error {
 	return c.handleAddSecret(names)
 }
 
+func (c *CLI) handleRemoveArgs(args []string) error {
+	names, err := parseNameArgs(args, "Name is required for rm")
+	if err != nil {
+		return err
+	}
+	return c.handleRemove(names)
+}
+
+func (c *CLI) handleRemove(names []string) error {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	rootKey, err := c.getRootKeyWithFallback(dir)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	_, path, found, err := findSecretByName(dir, rootKey, names)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
+	}
+
+	if err := os.Remove(path); err != nil {
+		return fatalError(err)
+	}
+
+	return nil
+}
+
 func parseAddArgs(args []string) ([]string, string, error) {
 	var names []string
 	var otpPath string
@@ -226,10 +266,6 @@ func parseAddArgs(args []string) ([]string, string, error) {
 }
 
 func (c *CLI) handleAddSecret(names []string) error {
-	if len(names) == 0 {
-		return userError("Name is required")
-	}
-
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -281,10 +317,6 @@ func (c *CLI) handleAddSecret(names []string) error {
 }
 
 func (c *CLI) handleAddOTP(names []string, qrPath string) error {
-	if len(names) == 0 {
-		return userError("Name is required")
-	}
-
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -404,7 +436,7 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 	for _, arg := range args {
 		if arg == "-o" {
 			if wantOTP {
-				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault NAME... [-o]")
+				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault NAME... [-o]")
 			}
 			wantOTP = true
 			continue
@@ -412,18 +444,22 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 		names = append(names, arg)
 	}
 
-	if len(names) == 0 || names[0] == "" {
-		return nil, false, userError("Name is required")
+	parsedNames, err := parseNameArgs(names, "Name is required")
+	if err != nil {
+		return nil, false, err
 	}
 
-	return names, wantOTP, nil
+	return parsedNames, wantOTP, nil
+}
+
+func parseNameArgs(args []string, emptyMsg string) ([]string, error) {
+	if len(args) == 0 || args[0] == "" {
+		return nil, userError(emptyMsg)
+	}
+	return args, nil
 }
 
 func (c *CLI) handleFetchSecret(names []string) error {
-	if len(names) == 0 {
-		return userError("Name is required")
-	}
-
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -455,10 +491,6 @@ func (c *CLI) handleFetchSecret(names []string) error {
 }
 
 func (c *CLI) handleFetchOTP(names []string) error {
-	if len(names) == 0 {
-		return userError("Name is required")
-	}
-
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)

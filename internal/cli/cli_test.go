@@ -315,6 +315,56 @@ func TestAddOTPAndFetchCode(t *testing.T) {
 	}
 }
 
+func TestRemoveSecret(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "personal", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	removePrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	exit, out, errOut := runCommand(t, dataDir, removePrompter, "rm", "PERSONAL", "EMAIL")
+	if exit != 0 {
+		t.Fatalf("rm failed: %s", errOut)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("expected no removal message, got: %q", out)
+	}
+
+	listPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+		t.Fatalf("list failed: %s", errOut)
+	} else if strings.Contains(listOut, "personal") {
+		t.Fatalf("expected secret to be removed, got list: %q", listOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	exit, _, errOut = runCommand(t, dataDir, fetchPrompter, "personal", "email")
+	if exit == 0 {
+		t.Fatalf("expected fetch to fail after removal")
+	}
+	if !strings.Contains(errOut, "Secret not found") {
+		t.Fatalf("unexpected fetch error after removal: %q", errOut)
+	}
+}
+
 func writeQRImage(path, payload string) error {
 	writer := qrcode.NewQRCodeWriter()
 	matrix, err := writer.Encode(payload, gozxing.BarcodeFormat_QR_CODE, 200, 200, nil)

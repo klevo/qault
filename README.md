@@ -61,6 +61,14 @@ qault add NAME... -o [PATH_TO_QR_CODE_IMAGE]
 
 Adds the OTP authentication object to secret JSON.
 
+### Removing a secret
+
+```sh
+qault rm NAME...
+```
+
+Deletes the secret that matches the provided name components (case-insensitive).
+
 ### Listing secrets
 
 ```sh
