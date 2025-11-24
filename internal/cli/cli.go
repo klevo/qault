@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -357,6 +358,7 @@ func (c *CLI) handleList() error {
 		return fatalError(err)
 	}
 
+	var secrets []store.Secret
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
@@ -368,7 +370,15 @@ func (c *CLI) handleList() error {
 			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		useColor := isTerminal(c.Out)
+		secrets = append(secrets, secret)
+	}
+
+	sort.Slice(secrets, func(i, j int) bool {
+		return namesLessFold(secrets[i].Name, secrets[j].Name)
+	})
+
+	useColor := isTerminal(c.Out)
+	for _, secret := range secrets {
 		fmt.Fprintln(c.Out, formatListNames(secret.Name, useColor))
 	}
 
@@ -673,6 +683,24 @@ func namesEqualFold(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func namesLessFold(a, b []string) bool {
+	minLen := len(a)
+	if len(b) < minLen {
+		minLen = len(b)
+	}
+
+	for i := 0; i < minLen; i++ {
+		lhs := strings.ToLower(a[i])
+		rhs := strings.ToLower(b[i])
+		if lhs == rhs {
+			continue
+		}
+		return lhs < rhs
+	}
+
+	return len(a) < len(b)
 }
 
 func formatListNames(names []string, useColor bool) string {
