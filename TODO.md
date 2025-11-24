@@ -13,3 +13,4 @@
 - [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
 - [ ] Unlock command to accept argument to keep unlocked for X minutes
+- [ ] Experiment with https://github.com/charmbracelet/bubbletea
