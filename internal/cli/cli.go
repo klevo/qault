@@ -380,9 +380,15 @@ func (c *CLI) handleList() error {
 		return listings[i].title < listings[j].title
 	})
 
+	colorGroups := isTerminal(c.Out)
+
 	for _, item := range listings {
 		if item.isGroup {
-			fmt.Fprintln(c.Out, item.title)
+			title := item.title
+			if colorGroups {
+				title = fmt.Sprintf("\x1b[34m%s\x1b[0m", item.title)
+			}
+			fmt.Fprintln(c.Out, title)
 			for _, child := range item.children {
 				fmt.Fprintf(c.Out, "  %s\n", child)
 			}
