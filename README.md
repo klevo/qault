@@ -52,6 +52,14 @@ Name is a required parameter.
 3. Generates UUID v7, creates the secret JSON payload, encrypts it with master password and saves it under data directory.
 4. Inform the user secret was saved under `[NAME]`.
 
+#### Adding TOTP MFA authentication to existing secret
+
+```sh
+qualt add [NAME] -o [PATH_TO_QR_CODE_IMAGE]
+```
+
+Adds the OTP authentication object to secret JSON.
+
 ### Listing secrets
 
 ```sh
@@ -70,6 +78,14 @@ qualt [NAME]
 1. Asks for master password and confirms it by decrypting `.lock` from data directory. If decryption fails, exit with 1 and informs that master key is wrong.
 2. Loads and starts decrypting all UUID v7 named files under data directory. Stops when it finds a case-insensitive match based on the name. Outputs the value of `secret:` to stdout and exits.
 3. If the name is not found, exit with code 1 and inform about it to stderr.
+
+#### Fetching an OTP
+
+```sh
+qualt [NAME] -o
+```
+
+Outputs the OTP, if OTP authentication is present for this secret, otherwise notify the user and exit with 1.
 
 ### Unlocking the vault for 5 minutes (agent mode)
 
