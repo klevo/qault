@@ -1,6 +1,6 @@
 - [x] Solve newline issue when fetching a password, when piping to another program.
 - [x] main.go tests
-- [ ] Handle adding secret with already existing name.
+- [x] Handle adding secret with already existing name.
 - [x] Tests.
 - [x] Agent that allows the keychain to be unlocked for a few minutes.
 - [x] Interrupt during entering master password causes terminal input to remain hidden.

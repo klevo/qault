@@ -132,6 +132,37 @@ func TestAddListAndFetch(t *testing.T) {
 	}
 }
 
+func TestAddFailsOnDuplicateNameCaseInsensitive(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	firstPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret-1"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, firstPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("first add failed: %s", errOut)
+	}
+
+	secondPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret-2"},
+	}
+	exit, _, errOut := runCommand(t, dataDir, secondPrompter, "add", "Email")
+	if exit == 0 {
+		t.Fatalf("expected duplicate add to fail")
+	}
+	if !strings.Contains(errOut, "Name already exists") {
+		t.Fatalf("expected duplicate name message, got: %q", errOut)
+	}
+}
+
 func TestFetchWithIncorrectPassword(t *testing.T) {
 	dataDir := t.TempDir()
 

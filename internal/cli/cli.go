@@ -218,6 +218,12 @@ func (c *CLI) handleAddSecret(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
+	if _, _, found, err := findSecretByName(dir, rootKey, name); err != nil {
+		return err
+	} else if found {
+		return exitError{code: 1, msg: "Name already exists"}
+	}
+
 	secretValue, err := c.Prompter.SecretValue()
 	if err != nil {
 		return fatalError(err)
@@ -267,9 +273,12 @@ func (c *CLI) handleAddOTP(name, qrPath string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, pathForSecret, err := findSecretByName(dir, rootKey, name)
+	secret, pathForSecret, found, err := findSecretByName(dir, rootKey, name)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
 	}
 
 	file, err := os.Open(qrPath)
@@ -376,9 +385,12 @@ func (c *CLI) handleFetchSecret(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, _, err := findSecretByName(dir, rootKey, name)
+	secret, _, found, err := findSecretByName(dir, rootKey, name)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
 	}
 
 	if isTerminal(c.Out) {
@@ -408,9 +420,12 @@ func (c *CLI) handleFetchOTP(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, _, err := findSecretByName(dir, rootKey, name)
+	secret, _, found, err := findSecretByName(dir, rootKey, name)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
 	}
 	if secret.OTP == nil {
 		return exitError{code: 1, msg: "OTP not configured for this secret"}
@@ -581,29 +596,29 @@ func (c *CLI) handleMasterKeyError(err error) error {
 	return fatalError(err)
 }
 
-func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, string, error) {
+func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, string, bool, error) {
 	files, err := ifs.ListSecretFiles(dir)
 	if err != nil {
-		return store.Secret{}, "", fatalError(err)
+		return store.Secret{}, "", false, fatalError(err)
 	}
 
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
-			return store.Secret{}, "", fatalError(err)
+			return store.Secret{}, "", false, fatalError(err)
 		}
 
 		secret, err := store.DecryptSecret(rootKey, data)
 		if err != nil {
-			return store.Secret{}, "", userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+			return store.Secret{}, "", false, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
 		if strings.EqualFold(secret.Name, name) {
-			return secret, path, nil
+			return secret, path, true, nil
 		}
 	}
 
-	return store.Secret{}, "", exitError{code: 1, msg: "Secret not found"}
+	return store.Secret{}, "", false, nil
 }
 
 func unlockRootKey(dir, password string) ([]byte, error) {
