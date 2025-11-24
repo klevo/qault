@@ -132,6 +132,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleMoveArgs(args[1:])
 	case "edit":
 		return c.handleEditArgs(args[1:])
+	case "recent":
+		return c.handleRecent()
 	default:
 		return c.handleFetchArgs(args)
 	}
@@ -305,6 +307,30 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 	}
 
 	return nil
+}
+
+func loadSecrets(dir string, rootKey []byte) ([]store.Secret, error) {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return nil, fatalError(err)
+	}
+
+	var secrets []store.Secret
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return nil, fatalError(err)
+		}
+
+		secret, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		secrets = append(secrets, secret)
+	}
+
+	return secrets, nil
 }
 
 func (c *CLI) handleEdit(names []string) error {
@@ -509,6 +535,14 @@ func (c *CLI) handleAddOTP(names []string, qrPath string) error {
 }
 
 func (c *CLI) handleList() error {
+	return c.handleListSorted(false)
+}
+
+func (c *CLI) handleRecent() error {
+	return c.handleListSorted(true)
+}
+
+func (c *CLI) handleListSorted(sortByUpdated bool) error {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -523,33 +557,24 @@ func (c *CLI) handleList() error {
 		return c.handleMasterKeyError(err)
 	}
 
-	files, err := ifs.ListSecretFiles(dir)
+	secrets, err := loadSecrets(dir, rootKey)
 	if err != nil {
-		return fatalError(err)
+		return err
 	}
 
-	var secrets []store.Secret
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return fatalError(err)
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
-		}
-
-		secrets = append(secrets, secret)
+	if sortByUpdated {
+		sort.Slice(secrets, func(i, j int) bool {
+			return secrets[i].UpdatedAt.After(secrets[j].UpdatedAt)
+		})
+	} else {
+		sort.Slice(secrets, func(i, j int) bool {
+			return namesLessFold(secrets[i].Name, secrets[j].Name)
+		})
 	}
-
-	sort.Slice(secrets, func(i, j int) bool {
-		return namesLessFold(secrets[i].Name, secrets[j].Name)
-	})
 
 	useColor := isTerminal(c.Out)
 	for _, secret := range secrets {
-		fmt.Fprintln(c.Out, formatListEntry(secret.Name, secret.OTP != nil, useColor))
+		fmt.Fprintln(c.Out, formatListEntry(secret.Name, secret.OTP != nil, useColor, sortByUpdated, secret.UpdatedAt))
 	}
 
 	return nil
@@ -873,7 +898,7 @@ func namesLessFold(a, b []string) bool {
 	return len(a) < len(b)
 }
 
-func formatListEntry(names []string, hasOTP bool, useColor bool) string {
+func formatListEntry(names []string, hasOTP bool, useColor bool, includeTimestamp bool, updatedAt time.Time) string {
 	if len(names) == 0 {
 		return ""
 	}
@@ -881,22 +906,30 @@ func formatListEntry(names []string, hasOTP bool, useColor bool) string {
 	parts := formatNameParts(names)
 	if useColor && len(parts) > 1 {
 		colors := []string{colorTeal, colorBlue}
-		colorIdx := 0
-		for i := 0; i < len(parts)-1; i++ {
+		for i, colorIdx := 0, 0; i < len(parts)-1; i, colorIdx = i+1, (colorIdx+1)%len(colors) {
 			parts[i] = colors[colorIdx] + parts[i] + colorReset
-			colorIdx = (colorIdx + 1) % len(colors)
 		}
 	}
 
 	name := strings.Join(parts, " ")
-	if !hasOTP {
-		return name
+	if hasOTP {
+		if useColor {
+			name += " " + colorFaint + "-o" + colorReset
+		} else {
+			name += " -o"
+		}
 	}
 
-	if useColor {
-		return name + " " + colorFaint + "-o" + colorReset
+	if includeTimestamp {
+		ts := updatedAt.UTC().Format(time.RFC3339)
+		if useColor {
+			name = colorFaint + ts + colorReset + " " + name
+		} else {
+			name = ts + " " + name
+		}
 	}
-	return name + " -o"
+
+	return name
 }
 
 func formatNames(names []string) string {

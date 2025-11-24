@@ -102,6 +102,14 @@ qault
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
 2. Decrypt all UUID v7 files in the data directory and print each `name` array on its own line, space-separated; any element containing whitespace is wrapped in double quotes. When run in a terminal and the name has multiple components, non-leaf components alternate blue/teal for readability; entries with OTP append a faint `-o` marker (plain `-o` when piped). Exit with code 1 if any decrypt fails.
 
+### Listing secrets by recent update
+
+```sh
+qault recent
+```
+
+Same output format as `qault` but sorted by `updated_at` descending, and each line is prefixed with the `updated_at` timestamp (faint in terminal).
+
 ### Fetching a secret
 
 ```sh

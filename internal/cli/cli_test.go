@@ -369,6 +369,76 @@ func TestRemoveSecret(t *testing.T) {
 	}
 }
 
+func TestRecentListsByUpdated(t *testing.T) {
+	originalNow := timeNow
+	clock := []time.Time{
+		time.Unix(1, 0).UTC(), // created foo
+		time.Unix(2, 0).UTC(), // created bar
+		time.Unix(3, 0).UTC(), // edit foo
+	}
+	idx := 0
+	timeNow = func() time.Time {
+		if idx >= len(clock) {
+			return clock[len(clock)-1]
+		}
+		v := clock[idx]
+		idx++
+		return v
+	}
+	defer func() { timeNow = originalNow }()
+
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addFoo := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"foo-secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addFoo, "add", "foo"); exit != 0 {
+		t.Fatalf("add foo failed: %s", errOut)
+	}
+
+	addBar := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"bar-secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addBar, "add", "bar"); exit != 0 {
+		t.Fatalf("add bar failed: %s", errOut)
+	}
+
+	editFoo := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"foo-updated"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, editFoo, "edit", "foo"); exit != 0 {
+		t.Fatalf("edit foo failed: %s", errOut)
+	}
+
+	recentPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, recentPrompter, "recent"); exit != 0 {
+		t.Fatalf("recent failed: %s", errOut)
+	} else {
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("expected 2 lines, got %d: %q", len(lines), out)
+		}
+		if !strings.Contains(lines[0], "foo") || !strings.Contains(lines[1], "bar") {
+			t.Fatalf("recent not ordered by updated time: %q", out)
+		}
+		if !strings.HasPrefix(lines[0], "1970-01-01T00:00:03Z") {
+			t.Fatalf("expected timestamp prefix, got: %q", lines[0])
+		}
+	}
+}
+
 func TestEditSecret(t *testing.T) {
 	originalNow := timeNow
 	timeNow = func() time.Time { return time.Unix(1000, 0).UTC() }
