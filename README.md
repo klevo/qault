@@ -53,6 +53,14 @@ Name components are required; each argument becomes one element in the stored na
 3. Generate a UUID v7, create the secret JSON payload, encrypt it with the root key, and save it.
 4. Confirm the secret was saved under the provided name path.
 
+### Editing an existing secret
+
+```sh
+qault edit NAME...
+```
+
+Replaces the secret value (prompted as `New secret:`) for the matched entry without altering the name or OTP.
+
 #### Adding TOTP MFA authentication to existing secret
 
 ```sh
@@ -76,6 +84,14 @@ qault mv OLD... --to NEW...
 ```
 
 Renames the secret from the old name components to the new ones (case-insensitive match on the source, destination must not already exist).
+
+### Editing an existing secret
+
+```sh
+qault edit NAME...
+```
+
+Replaces the secret value (prompted as `New secret:`) for the matched entry without altering the name or OTP.
 
 ### Listing secrets
 

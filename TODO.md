@@ -6,7 +6,7 @@
 - [x] Interrupt during entering master password causes terminal input to remain hidden.
 - [x] Delete secrets
 - [x] Move secret (change name)
-- [ ] Edit existing secrets
+- [x] Edit existing secrets
 - [ ] Multi line input / $EDITOR support
 - [ ] Implement change-password command
 - [ ] Git integration, with HTTPS username/password fetch from the key-chain support

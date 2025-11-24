@@ -34,6 +34,10 @@ func (p *fakePrompter) SecretValue() (string, error) {
 	return pop(&p.secrets)
 }
 
+func (p *fakePrompter) SecretValueWithPrompt(_ string) (string, error) {
+	return pop(&p.secrets)
+}
+
 func pop(values *[]string) (string, error) {
 	if len(*values) == 0 {
 		return "", errors.New("no input provided")
@@ -362,6 +366,57 @@ func TestRemoveSecret(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "Secret not found") {
 		t.Fatalf("unexpected fetch error after removal: %q", errOut)
+	}
+}
+
+func TestEditSecret(t *testing.T) {
+	originalNow := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0).UTC() }
+	defer func() { timeNow = originalNow }()
+
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"first-secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "personal", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	timeNow = func() time.Time { return time.Unix(2000, 0).UTC() }
+	editPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"updated-secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, editPrompter, "edit", "PERSONAL", "EMAIL"); exit != 0 {
+		t.Fatalf("edit failed: %s", errOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, fetchPrompter, "personal", "email"); exit != 0 {
+		t.Fatalf("fetch failed: %s", errOut)
+	} else if out != "updated-secret" {
+		t.Fatalf("unexpected fetch output after edit: %q", out)
+	}
+
+	// Ensure listing shows name unchanged
+	listPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+		t.Fatalf("list failed: %s", errOut)
+	} else if !strings.Contains(listOut, "personal email") {
+		t.Fatalf("list missing updated entry: %q", listOut)
 	}
 }
 

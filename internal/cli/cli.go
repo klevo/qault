@@ -60,6 +60,7 @@ type Prompter interface {
 	MasterPassword() (string, error)
 	NewMasterPassword() (string, error)
 	SecretValue() (string, error)
+	SecretValueWithPrompt(prompt string) (string, error)
 }
 
 type CLI struct {
@@ -129,6 +130,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleRemoveArgs(args[1:])
 	case "mv":
 		return c.handleMoveArgs(args[1:])
+	case "edit":
+		return c.handleEditArgs(args[1:])
 	default:
 		return c.handleFetchArgs(args)
 	}
@@ -214,6 +217,14 @@ func (c *CLI) handleRemoveArgs(args []string) error {
 	return c.handleRemove(names)
 }
 
+func (c *CLI) handleEditArgs(args []string) error {
+	names, err := parseNameArgs(args, "Name is required for edit")
+	if err != nil {
+		return err
+	}
+	return c.handleEdit(names)
+}
+
 func (c *CLI) handleMoveArgs(args []string) error {
 	oldNames, newNames, err := parseMoveArgs(args)
 	if err != nil {
@@ -293,6 +304,50 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 		return fatalError(err)
 	}
 
+	return nil
+}
+
+func (c *CLI) handleEdit(names []string) error {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	rootKey, err := c.getRootKeyWithFallback(dir)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	secret, path, found, err := findSecretByName(dir, rootKey, names)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
+	}
+
+	newSecretValue, err := c.Prompter.SecretValueWithPrompt("New secret: ")
+	if err != nil {
+		return fatalError(err)
+	}
+
+	secret.Secret = newSecretValue
+	secret.UpdatedAt = timeNow().UTC()
+
+	encrypted, err := store.EncryptSecret(rootKey, secret)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := store.WriteFile(path, encrypted); err != nil {
+		return fatalError(err)
+	}
+
+	fmt.Fprintf(c.Out, "Secret '%s' updated\n", formatNames(secret.Name))
 	return nil
 }
 
@@ -974,6 +1029,10 @@ func (p *TerminalPrompter) NewMasterPassword() (string, error) {
 
 func (p *TerminalPrompter) SecretValue() (string, error) {
 	return p.promptNonEmpty("Secret: ")
+}
+
+func (p *TerminalPrompter) SecretValueWithPrompt(prompt string) (string, error) {
+	return p.promptNonEmpty(prompt)
 }
 
 func (p *TerminalPrompter) promptNonEmpty(prompt string) (string, error) {
