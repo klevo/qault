@@ -4,9 +4,9 @@
 - [x] Tests.
 - [x] Agent that allows the keychain to be unlocked for a few minutes.
 - [x] Interrupt during entering master password causes terminal input to remain hidden.
-- [ ] Implement change-password command
-- [ ] Multi line input / $EDITOR support
-- [ ] Edit existing secrets
 - [ ] Delete secrets
 - [ ] Move secret (change name)
+- [ ] Multi line input / $EDITOR support
+- [ ] Edit existing secrets
+- [ ] Implement change-password command
 - [ ] Git integration, with HTTPS username/password fetch from the key-chain support
