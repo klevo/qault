@@ -4,7 +4,7 @@
 - [x] Tests.
 - [x] Agent that allows the keychain to be unlocked for a few minutes.
 - [x] Interrupt during entering master password causes terminal input to remain hidden.
-- [ ] Delete secrets
+- [x] Delete secrets
 - [ ] Move secret (change name)
 - [ ] Multi line input / $EDITOR support
 - [ ] Edit existing secrets
