@@ -267,33 +267,9 @@ func (c *CLI) handleAddOTP(name, qrPath string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	files, err := ifs.ListSecretFiles(dir)
+	secret, pathForSecret, err := findSecretByName(dir, rootKey, name)
 	if err != nil {
-		return fatalError(err)
-	}
-
-	var pathForSecret string
-	var secret store.Secret
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return fatalError(err)
-		}
-
-		s, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
-		}
-
-		if strings.EqualFold(s.Name, name) {
-			secret = s
-			pathForSecret = path
-			break
-		}
-	}
-
-	if pathForSecret == "" {
-		return exitError{code: 1, msg: "Secret not found"}
+		return err
 	}
 
 	file, err := os.Open(qrPath)
@@ -400,33 +376,17 @@ func (c *CLI) handleFetchSecret(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	files, err := ifs.ListSecretFiles(dir)
+	secret, _, err := findSecretByName(dir, rootKey, name)
 	if err != nil {
-		return fatalError(err)
+		return err
 	}
 
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return fatalError(err)
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
-		}
-
-		if strings.EqualFold(secret.Name, name) {
-			if isTerminal(c.Out) {
-				fmt.Fprintln(c.Out, secret.Secret)
-			} else {
-				fmt.Fprint(c.Out, secret.Secret)
-			}
-			return nil
-		}
+	if isTerminal(c.Out) {
+		fmt.Fprintln(c.Out, secret.Secret)
+	} else {
+		fmt.Fprint(c.Out, secret.Secret)
 	}
-
-	return exitError{code: 1, msg: "Secret not found"}
+	return nil
 }
 
 func (c *CLI) handleFetchOTP(name string) error {
@@ -448,42 +408,25 @@ func (c *CLI) handleFetchOTP(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	files, err := ifs.ListSecretFiles(dir)
+	secret, _, err := findSecretByName(dir, rootKey, name)
+	if err != nil {
+		return err
+	}
+	if secret.OTP == nil {
+		return exitError{code: 1, msg: "OTP not configured for this secret"}
+	}
+
+	code, err := otp.GenerateCode(*secret.OTP, timeNow().UTC())
 	if err != nil {
 		return fatalError(err)
 	}
 
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return fatalError(err)
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
-		}
-
-		if strings.EqualFold(secret.Name, name) {
-			if secret.OTP == nil {
-				return exitError{code: 1, msg: "OTP not configured for this secret"}
-			}
-
-			code, err := otp.GenerateCode(*secret.OTP, timeNow().UTC())
-			if err != nil {
-				return fatalError(err)
-			}
-
-			if isTerminal(c.Out) {
-				fmt.Fprintln(c.Out, code)
-			} else {
-				fmt.Fprint(c.Out, code)
-			}
-			return nil
-		}
+	if isTerminal(c.Out) {
+		fmt.Fprintln(c.Out, code)
+	} else {
+		fmt.Fprint(c.Out, code)
 	}
-
-	return exitError{code: 1, msg: "Secret not found"}
+	return nil
 }
 
 func (c *CLI) handleUnlock() error {
@@ -636,6 +579,31 @@ func (c *CLI) handleMasterKeyError(err error) error {
 		return exitError{code: 1, msg: "Incorrect master password"}
 	}
 	return fatalError(err)
+}
+
+func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, string, error) {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return store.Secret{}, "", fatalError(err)
+	}
+
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return store.Secret{}, "", fatalError(err)
+		}
+
+		secret, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return store.Secret{}, "", userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		if strings.EqualFold(secret.Name, name) {
+			return secret, path, nil
+		}
+	}
+
+	return store.Secret{}, "", exitError{code: 1, msg: "Secret not found"}
 }
 
 func unlockRootKey(dir, password string) ([]byte, error) {
