@@ -277,6 +277,10 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return err
 	}
 
+	sock := agent.SocketPath(dir)
+	_ = agent.Lock(sock)
+	_ = waitForAgentStop(sock, 10, 50*time.Millisecond)
+
 	fmt.Fprintln(c.Out, "Master password updated")
 	return nil
 }
