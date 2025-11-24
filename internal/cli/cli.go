@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"golang.org/x/term"
@@ -183,24 +184,41 @@ func (c *CLI) handleInit() error {
 }
 
 func (c *CLI) handleAddArgs(args []string) error {
-	if len(args) == 0 {
-		return userError("name is required for add")
+	names, otpPath, err := parseAddArgs(args)
+	if err != nil {
+		return err
 	}
-
-	name := args[0]
-	if len(args) == 1 {
-		return c.handleAddSecret(name)
+	if otpPath != "" {
+		return c.handleAddOTP(names, otpPath)
 	}
-
-	if len(args) == 3 && args[1] == "-o" {
-		return c.handleAddOTP(name, args[2])
-	}
-
-	return userError("usage: qault add [NAME] [-o PATH]")
+	return c.handleAddSecret(names)
 }
 
-func (c *CLI) handleAddSecret(name string) error {
-	if name == "" {
+func parseAddArgs(args []string) ([]string, string, error) {
+	var names []string
+	var otpPath string
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-o" {
+			if otpPath != "" || i == len(args)-1 {
+				return nil, "", userError("usage: qault add NAME... [-o PATH]")
+			}
+			otpPath = args[i+1]
+			i++
+			continue
+		}
+		names = append(names, args[i])
+	}
+
+	if len(names) == 0 {
+		return nil, "", userError("name is required for add")
+	}
+
+	return names, otpPath, nil
+}
+
+func (c *CLI) handleAddSecret(names []string) error {
+	if len(names) == 0 {
 		return userError("Name is required")
 	}
 
@@ -218,7 +236,7 @@ func (c *CLI) handleAddSecret(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	if _, _, found, err := findSecretByName(dir, rootKey, name); err != nil {
+	if _, _, found, err := findSecretByName(dir, rootKey, names); err != nil {
 		return err
 	} else if found {
 		return exitError{code: 1, msg: "Name already exists"}
@@ -230,7 +248,7 @@ func (c *CLI) handleAddSecret(name string) error {
 	}
 
 	s := store.Secret{
-		Name:      name,
+		Name:      names,
 		Secret:    secretValue,
 		CreatedAt: timeNow().UTC(),
 		UpdatedAt: timeNow().UTC(),
@@ -250,12 +268,12 @@ func (c *CLI) handleAddSecret(name string) error {
 		return fatalError(err)
 	}
 
-	fmt.Fprintf(c.Out, "Secret '%s' added\n", name)
+	fmt.Fprintf(c.Out, "Secret '%s' added\n", formatNames(names))
 	return nil
 }
 
-func (c *CLI) handleAddOTP(name, qrPath string) error {
-	if name == "" {
+func (c *CLI) handleAddOTP(names []string, qrPath string) error {
+	if len(names) == 0 {
 		return userError("Name is required")
 	}
 
@@ -273,7 +291,7 @@ func (c *CLI) handleAddOTP(name, qrPath string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, pathForSecret, found, err := findSecretByName(dir, rootKey, name)
+	secret, pathForSecret, found, err := findSecretByName(dir, rootKey, names)
 	if err != nil {
 		return err
 	}
@@ -309,7 +327,7 @@ func (c *CLI) handleAddOTP(name, qrPath string) error {
 		return fatalError(err)
 	}
 
-	fmt.Fprintf(c.Out, "OTP added to '%s'\n", secret.Name)
+	fmt.Fprintf(c.Out, "OTP added\n")
 	return nil
 }
 
@@ -344,30 +362,47 @@ func (c *CLI) handleList() error {
 			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		fmt.Fprintln(c.Out, secret.Name)
+		fmt.Fprintln(c.Out, formatNames(secret.Name))
 	}
 
 	return nil
 }
 
 func (c *CLI) handleFetchArgs(args []string) error {
-	if len(args) == 0 || args[0] == "" {
-		return userError("Name is required")
+	names, wantOTP, err := parseFetchArgs(args)
+	if err != nil {
+		return err
 	}
-
-	if len(args) == 2 && args[1] == "-o" {
-		return c.handleFetchOTP(args[0])
+	if wantOTP {
+		return c.handleFetchOTP(names)
 	}
-
-	if len(args) == 1 {
-		return c.handleFetchSecret(args[0])
-	}
-
-	return userError("usage: qault init | qault unlock | qault lock | qault add [NAME] [-o PATH] | qault [NAME] [-o]")
+	return c.handleFetchSecret(names)
 }
 
-func (c *CLI) handleFetchSecret(name string) error {
-	if name == "" {
+func parseFetchArgs(args []string) ([]string, bool, error) {
+	var names []string
+	wantOTP := false
+
+	for _, arg := range args {
+		if arg == "-o" {
+			if wantOTP {
+				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault NAME... [-o]")
+			}
+			wantOTP = true
+			continue
+		}
+		names = append(names, arg)
+	}
+
+	if len(names) == 0 || names[0] == "" {
+		return nil, false, userError("Name is required")
+	}
+
+	return names, wantOTP, nil
+}
+
+func (c *CLI) handleFetchSecret(names []string) error {
+	if len(names) == 0 {
 		return userError("Name is required")
 	}
 
@@ -385,7 +420,7 @@ func (c *CLI) handleFetchSecret(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, _, found, err := findSecretByName(dir, rootKey, name)
+	secret, _, found, err := findSecretByName(dir, rootKey, names)
 	if err != nil {
 		return err
 	}
@@ -401,8 +436,8 @@ func (c *CLI) handleFetchSecret(name string) error {
 	return nil
 }
 
-func (c *CLI) handleFetchOTP(name string) error {
-	if name == "" {
+func (c *CLI) handleFetchOTP(names []string) error {
+	if len(names) == 0 {
 		return userError("Name is required")
 	}
 
@@ -420,7 +455,7 @@ func (c *CLI) handleFetchOTP(name string) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secret, _, found, err := findSecretByName(dir, rootKey, name)
+	secret, _, found, err := findSecretByName(dir, rootKey, names)
 	if err != nil {
 		return err
 	}
@@ -596,7 +631,7 @@ func (c *CLI) handleMasterKeyError(err error) error {
 	return fatalError(err)
 }
 
-func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, string, bool, error) {
+func findSecretByName(dir string, rootKey []byte, names []string) (store.Secret, string, bool, error) {
 	files, err := ifs.ListSecretFiles(dir)
 	if err != nil {
 		return store.Secret{}, "", false, fatalError(err)
@@ -613,12 +648,50 @@ func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, st
 			return store.Secret{}, "", false, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		if strings.EqualFold(secret.Name, name) {
+		if namesEqualFold(secret.Name, names) {
 			return secret, path, true, nil
 		}
 	}
 
 	return store.Secret{}, "", false, nil
+}
+
+func namesEqualFold(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func formatNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		if hasWhitespace(name) {
+			parts = append(parts, strconv.Quote(name))
+			continue
+		}
+		parts = append(parts, name)
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func hasWhitespace(value string) bool {
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func unlockRootKey(dir, password string) ([]byte, error) {

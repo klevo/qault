@@ -13,7 +13,7 @@ import (
 
 func TestEncryptDecryptSecret(t *testing.T) {
 	secret := Secret{
-		Name:   "email",
+		Name:   []string{"email"},
 		Secret: "hunter2",
 		OTP: &otp.Config{
 			Issuer:      "Example",

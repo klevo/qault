@@ -95,7 +95,7 @@ func TestAddListAndFetch(t *testing.T) {
 		master:  []string{"pw"},
 		secrets: []string{"alpha-secret"},
 	}
-	if exit, _, errOut := runCommand(t, dataDir, addEmailPrompter, "add", "email"); exit != 0 {
+	if exit, _, errOut := runCommand(t, dataDir, addEmailPrompter, "add", "personal", "email"); exit != 0 {
 		t.Fatalf("add email failed: %s", errOut)
 	}
 
@@ -103,7 +103,7 @@ func TestAddListAndFetch(t *testing.T) {
 		master:  []string{"pw"},
 		secrets: []string{"beta-secret"},
 	}
-	if exit, _, errOut := runCommand(t, dataDir, addBankPrompter, "add", "bank"); exit != 0 {
+	if exit, _, errOut := runCommand(t, dataDir, addBankPrompter, "add", "work account", "bank"); exit != 0 {
 		t.Fatalf("add bank failed: %s", errOut)
 	}
 
@@ -115,20 +115,31 @@ func TestAddListAndFetch(t *testing.T) {
 		t.Fatalf("list failed: %s", errOut)
 	}
 
-	if !strings.Contains(listOut, "email") || !strings.Contains(listOut, "bank") {
+	if !strings.Contains(listOut, "personal email") || !strings.Contains(listOut, "\"work account\" bank") {
 		t.Fatalf("list output missing expected entries: %q", listOut)
 	}
 
 	fetchPrompter := &fakePrompter{
 		master: []string{"pw"},
 	}
-	exit, fetchOut, errOut := runCommand(t, dataDir, fetchPrompter, "email")
+	exit, fetchOut, errOut := runCommand(t, dataDir, fetchPrompter, "personal", "email")
 	if exit != 0 {
 		t.Fatalf("fetch failed: %s", errOut)
 	}
 
 	if fetchOut != "alpha-secret" {
 		t.Fatalf("unexpected fetch output: %q", fetchOut)
+	}
+
+	fetchBankPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	exit, fetchBankOut, errOut := runCommand(t, dataDir, fetchBankPrompter, "WORK ACCOUNT", "BANK")
+	if exit != 0 {
+		t.Fatalf("fetch with whitespace name failed: %s", errOut)
+	}
+	if fetchBankOut != "beta-secret" {
+		t.Fatalf("unexpected fetch output for bank: %q", fetchBankOut)
 	}
 }
 
@@ -146,7 +157,7 @@ func TestAddFailsOnDuplicateNameCaseInsensitive(t *testing.T) {
 		master:  []string{"pw"},
 		secrets: []string{"secret-1"},
 	}
-	if exit, _, errOut := runCommand(t, dataDir, firstPrompter, "add", "email"); exit != 0 {
+	if exit, _, errOut := runCommand(t, dataDir, firstPrompter, "add", "shared", "login"); exit != 0 {
 		t.Fatalf("first add failed: %s", errOut)
 	}
 
@@ -154,7 +165,7 @@ func TestAddFailsOnDuplicateNameCaseInsensitive(t *testing.T) {
 		master:  []string{"pw"},
 		secrets: []string{"secret-2"},
 	}
-	exit, _, errOut := runCommand(t, dataDir, secondPrompter, "add", "Email")
+	exit, _, errOut := runCommand(t, dataDir, secondPrompter, "add", "SHARED", "LOGIN")
 	if exit == 0 {
 		t.Fatalf("expected duplicate add to fail")
 	}

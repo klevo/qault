@@ -23,7 +23,7 @@ While at it, I aim for post-quantum-safe storage/encryption, assuming AES-GCM wi
 ## 🧠 Design
 
 * Secrets plus metadata are stored as encrypted JSON files in the data directory; filenames are UUID v7 from `github.com/google/uuid`.
-* Secret JSON layout: `{name, secret, created_at, updated_at}`.
+* Secret JSON layout: `{name: [string], secret, created_at, updated_at}`; `name` preserves the ordered path of labels you provide.
 * Data directory lives under `$XDG_DATA_HOME/qault` if set, otherwise `$HOME/.qault`.
 * Password-based key derivation uses [Argon2id](https://pkg.go.dev/golang.org/x/crypto/argon2#hdr-Argon2id) with high memory/time cost and CPU-tuned parallelism to slow offline attacks; a strong master password is still required.
 
@@ -43,20 +43,20 @@ Outputs the location of the data directory to stdout.
 ### Adding secrets to the vault
 
 ```sh
-qault add [NAME]
+qault add NAME...
 ```
 
-Name is a required parameter.
+Name components are required; each argument becomes one element in the stored name array (quote an argument to embed spaces inside a single element).
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
 2. Prompt for the secret value (non-empty).
 3. Generate a UUID v7, create the secret JSON payload, encrypt it with the root key, and save it.
-4. Confirm the secret was saved under `[NAME]`.
+4. Confirm the secret was saved under the provided name path.
 
 #### Adding TOTP MFA authentication to existing secret
 
 ```sh
-qault add [NAME] -o [PATH_TO_QR_CODE_IMAGE]
+qault add NAME... -o [PATH_TO_QR_CODE_IMAGE]
 ```
 
 Adds the OTP authentication object to secret JSON.
@@ -68,22 +68,22 @@ qault
 ```
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
-2. Decrypt all UUID v7 files in the data directory and print each `name` on its own line; exit with code 1 if any decrypt fails.
+2. Decrypt all UUID v7 files in the data directory and print each `name` array on its own line, space-separated; any element containing whitespace is wrapped in double quotes. Exit with code 1 if any decrypt fails.
 
 ### Fetching a secret
 
 ```sh
-qault [NAME]
+qault NAME...
 ```
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
-2. Decrypt UUID v7 files until a case-insensitive name match is found, then print `secret` and exit.
+2. Decrypt UUID v7 files until a case-insensitive match for the provided name elements is found, then print `secret` and exit.
 3. If the name is not found, exit with code 1 and note it on stderr.
 
 #### Fetching an OTP
 
 ```sh
-qault [NAME] -o
+qault NAME... -o
 ```
 
 Outputs the OTP if present; otherwise notify the user and exit with code 1.

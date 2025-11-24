@@ -11,7 +11,7 @@ import (
 )
 
 type Secret struct {
-	Name      string      `json:"name"`
+	Name      []string    `json:"name"`
 	Secret    string      `json:"secret"`
 	OTP       *otp.Config `json:"otp,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
