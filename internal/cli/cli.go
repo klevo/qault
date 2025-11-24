@@ -81,6 +81,7 @@ func NewDefault() *CLI {
 const (
 	colorBlue  = "\033[34m"
 	colorTeal  = "\033[36m"
+	colorFaint = "\033[2m"
 	colorReset = "\033[0m"
 )
 
@@ -379,7 +380,7 @@ func (c *CLI) handleList() error {
 
 	useColor := isTerminal(c.Out)
 	for _, secret := range secrets {
-		fmt.Fprintln(c.Out, formatListNames(secret.Name, useColor))
+		fmt.Fprintln(c.Out, formatListEntry(secret.Name, secret.OTP != nil, useColor))
 	}
 
 	return nil
@@ -703,7 +704,7 @@ func namesLessFold(a, b []string) bool {
 	return len(a) < len(b)
 }
 
-func formatListNames(names []string, useColor bool) string {
+func formatListEntry(names []string, hasOTP bool, useColor bool) string {
 	if len(names) == 0 {
 		return ""
 	}
@@ -718,7 +719,15 @@ func formatListNames(names []string, useColor bool) string {
 		}
 	}
 
-	return strings.Join(parts, " ")
+	name := strings.Join(parts, " ")
+	if !hasOTP {
+		return name
+	}
+
+	if useColor {
+		return name + " " + colorFaint + "-o" + colorReset
+	}
+	return name + " -o"
 }
 
 func formatNames(names []string) string {
