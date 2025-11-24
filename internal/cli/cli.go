@@ -127,6 +127,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleAddArgs(args[1:])
 	case "rm":
 		return c.handleRemoveArgs(args[1:])
+	case "mv":
+		return c.handleMoveArgs(args[1:])
 	default:
 		return c.handleFetchArgs(args)
 	}
@@ -212,6 +214,14 @@ func (c *CLI) handleRemoveArgs(args []string) error {
 	return c.handleRemove(names)
 }
 
+func (c *CLI) handleMoveArgs(args []string) error {
+	oldNames, newNames, err := parseMoveArgs(args)
+	if err != nil {
+		return err
+	}
+	return c.handleMove(oldNames, newNames)
+}
+
 func (c *CLI) handleRemove(names []string) error {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
@@ -242,6 +252,50 @@ func (c *CLI) handleRemove(names []string) error {
 	return nil
 }
 
+func (c *CLI) handleMove(oldNames, newNames []string) error {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	rootKey, err := c.getRootKeyWithFallback(dir)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	secret, path, found, err := findSecretByName(dir, rootKey, oldNames)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return exitError{code: 1, msg: "Secret not found"}
+	}
+
+	if _, _, conflict, err := findSecretByName(dir, rootKey, newNames); err != nil {
+		return err
+	} else if conflict && !namesEqualFold(oldNames, newNames) {
+		return exitError{code: 1, msg: "Name already exists"}
+	}
+
+	secret.Name = newNames
+	secret.UpdatedAt = timeNow().UTC()
+
+	encrypted, err := store.EncryptSecret(rootKey, secret)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := store.WriteFile(path, encrypted); err != nil {
+		return fatalError(err)
+	}
+
+	return nil
+}
+
 func parseAddArgs(args []string) ([]string, string, error) {
 	var names []string
 	var otpPath string
@@ -263,6 +317,34 @@ func parseAddArgs(args []string) ([]string, string, error) {
 	}
 
 	return names, otpPath, nil
+}
+
+func parseMoveArgs(args []string) ([]string, []string, error) {
+	var oldNames []string
+	var newNames []string
+	sawSeparator := false
+
+	for _, arg := range args {
+		if arg == "--to" {
+			if sawSeparator {
+				return nil, nil, userError("usage: qault mv OLD... --to NEW...")
+			}
+			sawSeparator = true
+			continue
+		}
+
+		if sawSeparator {
+			newNames = append(newNames, arg)
+		} else {
+			oldNames = append(oldNames, arg)
+		}
+	}
+
+	if !sawSeparator || len(oldNames) == 0 || len(newNames) == 0 {
+		return nil, nil, userError("usage: qault mv OLD... --to NEW...")
+	}
+
+	return oldNames, newNames, nil
 }
 
 func (c *CLI) handleAddSecret(names []string) error {
@@ -436,7 +518,7 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 	for _, arg := range args {
 		if arg == "-o" {
 			if wantOTP {
-				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault NAME... [-o]")
+				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault NAME... [-o]")
 			}
 			wantOTP = true
 			continue

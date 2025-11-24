@@ -69,6 +69,14 @@ qault rm NAME...
 
 Deletes the secret that matches the provided name components (case-insensitive).
 
+### Renaming a secret
+
+```sh
+qault mv OLD... --to NEW...
+```
+
+Renames the secret from the old name components to the new ones (case-insensitive match on the source, destination must not already exist).
+
 ### Listing secrets
 
 ```sh

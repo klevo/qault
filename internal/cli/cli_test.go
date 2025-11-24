@@ -365,6 +365,97 @@ func TestRemoveSecret(t *testing.T) {
 	}
 }
 
+func TestMoveSecret(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"alpha"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "personal", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	movePrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, movePrompter, "mv", "PERSONAL", "EMAIL", "--to", "personal", "login"); exit != 0 {
+		t.Fatalf("mv failed: %s", errOut)
+	}
+
+	listPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+		t.Fatalf("list failed: %s", errOut)
+	} else if !strings.Contains(listOut, "personal login") {
+		t.Fatalf("expected renamed entry in list, got: %q", listOut)
+	} else if strings.Contains(listOut, "personal email") {
+		t.Fatalf("old name still present in list: %q", listOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, fetchPrompter, "personal", "login"); exit != 0 {
+		t.Fatalf("fetch new name failed: %s", errOut)
+	} else if out != "alpha" {
+		t.Fatalf("unexpected fetch output: %q", out)
+	}
+
+	fetchOldPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, fetchOldPrompter, "personal", "email"); exit == 0 {
+		t.Fatalf("expected old name fetch to fail")
+	} else if !strings.Contains(errOut, "Secret not found") {
+		t.Fatalf("unexpected error for old fetch: %q", errOut)
+	}
+}
+
+func TestMoveSecretConflicts(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	firstPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"one"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, firstPrompter, "add", "foo"); exit != 0 {
+		t.Fatalf("add first failed: %s", errOut)
+	}
+
+	secondPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"two"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, secondPrompter, "add", "bar"); exit != 0 {
+		t.Fatalf("add second failed: %s", errOut)
+	}
+
+	movePrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, movePrompter, "mv", "foo", "--to", "BAR"); exit == 0 {
+		t.Fatalf("expected move conflict to fail")
+	} else if !strings.Contains(errOut, "Name already exists") {
+		t.Fatalf("unexpected conflict error: %q", errOut)
+	}
+}
+
 func writeQRImage(path, payload string) error {
 	writer := qrcode.NewQRCodeWriter()
 	matrix, err := writer.Encode(payload, gozxing.BarcodeFormat_QR_CODE, 200, 200, nil)
