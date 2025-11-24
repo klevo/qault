@@ -10,5 +10,6 @@
 - [x] Multi line input / $EDITOR support
 - [ ] Implement change-password command
 - [ ] Implement -g argument for adding and editing password, that generates a strong password and outputs it
-- [ ] Git integration, with HTTPS username/password fetch from the key-chain support
+- [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
+- [ ] Unlock command to accept argument to keep unlocked for X minutes
