@@ -8,7 +8,7 @@
 - [x] Move secret (change name)
 - [x] Edit existing secrets
 - [x] Multi line input / $EDITOR support
-- [ ] Implement change-password command
+- [x] Implement change-password command
 - [ ] Implement -g argument for adding and editing password, that generates a strong password and outputs it
 - [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
