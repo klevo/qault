@@ -21,6 +21,7 @@ import (
 	"qault/internal/agent"
 	icrypto "qault/internal/crypto"
 	ifs "qault/internal/fs"
+	"qault/internal/otp"
 	"qault/internal/store"
 )
 
@@ -65,6 +66,8 @@ type CLI struct {
 	Prompter Prompter
 }
 
+var timeNow = time.Now
+
 func NewDefault() *CLI {
 	return &CLI{
 		Out:      os.Stdout,
@@ -98,35 +101,23 @@ func (c *CLI) handleError(err error) int {
 }
 
 func (c *CLI) dispatch(args []string) error {
-	switch {
-	case len(args) == 0:
+	if len(args) == 0 {
 		return c.handleList()
-	case len(args) == 1:
-		if args[0] == "init" {
-			return c.handleInit()
-		}
+	}
 
-		if args[0] == "unlock" {
-			return c.handleUnlock()
-		}
-
-		if args[0] == "lock" {
-			return c.handleLock()
-		}
-
-		if args[0] == "add" {
-			return userError("name is required for add")
-		}
-
-		if args[0] == "agent" {
-			return c.serveAgent()
-		}
-
-		return c.handleFetch(args[0])
-	case len(args) == 2 && args[0] == "add":
-		return c.handleAdd(args[1])
+	switch args[0] {
+	case "init":
+		return c.handleInit()
+	case "unlock":
+		return c.handleUnlock()
+	case "lock":
+		return c.handleLock()
+	case "agent":
+		return c.serveAgent()
+	case "add":
+		return c.handleAddArgs(args[1:])
 	default:
-		return userError("usage: qault init | qault unlock | qault lock | qault add [NAME] | qault [NAME]")
+		return c.handleFetchArgs(args)
 	}
 }
 
@@ -191,7 +182,24 @@ func (c *CLI) handleInit() error {
 	return nil
 }
 
-func (c *CLI) handleAdd(name string) error {
+func (c *CLI) handleAddArgs(args []string) error {
+	if len(args) == 0 {
+		return userError("name is required for add")
+	}
+
+	name := args[0]
+	if len(args) == 1 {
+		return c.handleAddSecret(name)
+	}
+
+	if len(args) == 3 && args[1] == "-o" {
+		return c.handleAddOTP(name, args[2])
+	}
+
+	return userError("usage: qault add [NAME] [-o PATH]")
+}
+
+func (c *CLI) handleAddSecret(name string) error {
 	if name == "" {
 		return userError("Name is required")
 	}
@@ -215,12 +223,11 @@ func (c *CLI) handleAdd(name string) error {
 		return fatalError(err)
 	}
 
-	now := time.Now().UTC()
 	s := store.Secret{
 		Name:      name,
 		Secret:    secretValue,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt: timeNow().UTC(),
+		UpdatedAt: timeNow().UTC(),
 	}
 
 	encrypted, err := store.EncryptSecret(rootKey, s)
@@ -238,6 +245,86 @@ func (c *CLI) handleAdd(name string) error {
 	}
 
 	fmt.Fprintf(c.Out, "Secret '%s' added\n", name)
+	return nil
+}
+
+func (c *CLI) handleAddOTP(name, qrPath string) error {
+	if name == "" {
+		return userError("Name is required")
+	}
+
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	rootKey, err := c.getRootKeyWithFallback(dir)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	var pathForSecret string
+	var secret store.Secret
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return fatalError(err)
+		}
+
+		s, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		if strings.EqualFold(s.Name, name) {
+			secret = s
+			pathForSecret = path
+			break
+		}
+	}
+
+	if pathForSecret == "" {
+		return exitError{code: 1, msg: "Secret not found"}
+	}
+
+	file, err := os.Open(qrPath)
+	if err != nil {
+		return fatalError(err)
+	}
+	defer file.Close()
+
+	uri, err := otp.DecodeImage(file)
+	if err != nil {
+		return userError(fmt.Sprintf("Failed to decode QR: %v", err))
+	}
+
+	cfg, err := otp.ParseURI(uri)
+	if err != nil {
+		return userError(err.Error())
+	}
+
+	secret.OTP = &cfg
+	secret.UpdatedAt = timeNow().UTC()
+
+	encrypted, err := store.EncryptSecret(rootKey, secret)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := store.WriteFile(pathForSecret, encrypted); err != nil {
+		return fatalError(err)
+	}
+
+	fmt.Fprintf(c.Out, "OTP added to '%s'\n", secret.Name)
 	return nil
 }
 
@@ -278,7 +365,23 @@ func (c *CLI) handleList() error {
 	return nil
 }
 
-func (c *CLI) handleFetch(name string) error {
+func (c *CLI) handleFetchArgs(args []string) error {
+	if len(args) == 0 || args[0] == "" {
+		return userError("Name is required")
+	}
+
+	if len(args) == 2 && args[1] == "-o" {
+		return c.handleFetchOTP(args[0])
+	}
+
+	if len(args) == 1 {
+		return c.handleFetchSecret(args[0])
+	}
+
+	return userError("usage: qault init | qault unlock | qault lock | qault add [NAME] [-o PATH] | qault [NAME] [-o]")
+}
+
+func (c *CLI) handleFetchSecret(name string) error {
 	if name == "" {
 		return userError("Name is required")
 	}
@@ -318,6 +421,63 @@ func (c *CLI) handleFetch(name string) error {
 				fmt.Fprintln(c.Out, secret.Secret)
 			} else {
 				fmt.Fprint(c.Out, secret.Secret)
+			}
+			return nil
+		}
+	}
+
+	return exitError{code: 1, msg: "Secret not found"}
+}
+
+func (c *CLI) handleFetchOTP(name string) error {
+	if name == "" {
+		return userError("Name is required")
+	}
+
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return fatalError(err)
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return fatalError(err)
+	}
+
+	rootKey, err := c.getRootKeyWithFallback(dir)
+	if err != nil {
+		return c.handleMasterKeyError(err)
+	}
+
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return fatalError(err)
+	}
+
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return fatalError(err)
+		}
+
+		secret, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		if strings.EqualFold(secret.Name, name) {
+			if secret.OTP == nil {
+				return exitError{code: 1, msg: "OTP not configured for this secret"}
+			}
+
+			code, err := otp.GenerateCode(*secret.OTP, timeNow().UTC())
+			if err != nil {
+				return fatalError(err)
+			}
+
+			if isTerminal(c.Out) {
+				fmt.Fprintln(c.Out, code)
+			} else {
+				fmt.Fprint(c.Out, code)
 			}
 			return nil
 		}

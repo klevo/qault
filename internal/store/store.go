@@ -7,13 +7,15 @@ import (
 	"time"
 
 	icrypto "qault/internal/crypto"
+	"qault/internal/otp"
 )
 
 type Secret struct {
-	Name      string    `json:"name"`
-	Secret    string    `json:"secret"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Name      string      `json:"name"`
+	Secret    string      `json:"secret"`
+	OTP       *otp.Config `json:"otp,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 func EncryptSecret(rootKey []byte, s Secret) ([]byte, error) {

@@ -3,10 +3,17 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/makiuchi-d/gozxing"
+	"github.com/makiuchi-d/gozxing/qrcode"
 )
 
 type fakePrompter struct {
@@ -217,4 +224,78 @@ func TestUnlockAndLockFlow(t *testing.T) {
 	if fetchOut != "secret" {
 		t.Fatalf("unexpected fetch output after relock: %q", fetchOut)
 	}
+}
+
+func TestAddOTPAndFetchCode(t *testing.T) {
+	originalNow := timeNow
+	timeNow = func() time.Time { return time.Unix(59, 0).UTC() }
+	defer func() { timeNow = originalNow }()
+
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add secret failed: %s", errOut)
+	}
+
+	uri := "otpauth://totp/Example:alice@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Example&algorithm=SHA1&digits=6&period=30"
+	qrPath := filepath.Join(dataDir, "qr.png")
+	if err := writeQRImage(qrPath, uri); err != nil {
+		t.Fatalf("write qr: %v", err)
+	}
+
+	addOtpPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addOtpPrompter, "add", "email", "-o", qrPath); exit != 0 {
+		t.Fatalf("add otp failed: %s", errOut)
+	}
+
+	fetchOtpPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	exit, out, errOut := runCommand(t, dataDir, fetchOtpPrompter, "email", "-o")
+	if exit != 0 {
+		t.Fatalf("fetch otp failed: %s", errOut)
+	}
+	if strings.TrimSpace(out) != "287082" {
+		t.Fatalf("unexpected otp output: %q", out)
+	}
+}
+
+func writeQRImage(path, payload string) error {
+	writer := qrcode.NewQRCodeWriter()
+	matrix, err := writer.Encode(payload, gozxing.BarcodeFormat_QR_CODE, 200, 200, nil)
+	if err != nil {
+		return err
+	}
+
+	img := image.NewGray(image.Rect(0, 0, matrix.GetWidth(), matrix.GetHeight()))
+	for y := 0; y < matrix.GetHeight(); y++ {
+		for x := 0; x < matrix.GetWidth(); x++ {
+			if matrix.Get(x, y) {
+				img.SetGray(x, y, color.Gray{Y: 0})
+			} else {
+				img.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return png.Encode(file, img)
 }

@@ -3,16 +3,26 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	icrypto "qault/internal/crypto"
+	"qault/internal/otp"
 )
 
 func TestEncryptDecryptSecret(t *testing.T) {
 	secret := Secret{
-		Name:      "email",
-		Secret:    "hunter2",
+		Name:   "email",
+		Secret: "hunter2",
+		OTP: &otp.Config{
+			Issuer:      "Example",
+			AccountName: "user@example.com",
+			Secret:      "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+			Digits:      6,
+			Period:      30,
+			Algorithm:   "SHA1",
+		},
 		CreatedAt: time.Unix(100, 0),
 		UpdatedAt: time.Unix(200, 0),
 	}
@@ -37,7 +47,7 @@ func TestEncryptDecryptSecret(t *testing.T) {
 		t.Fatalf("DecryptSecret error: %v", err)
 	}
 
-	if decrypted != secret {
+	if !reflect.DeepEqual(decrypted, secret) {
 		t.Fatalf("round trip mismatch: %+v != %+v", decrypted, secret)
 	}
 }
