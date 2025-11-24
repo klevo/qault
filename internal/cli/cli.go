@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -333,6 +334,11 @@ func (c *CLI) handleList() error {
 		return fatalError(err)
 	}
 
+	var (
+		groups  = make(map[string][]string)
+		singles []string
+	)
+
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
@@ -344,7 +350,46 @@ func (c *CLI) handleList() error {
 			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		fmt.Fprintln(c.Out, secret.Name)
+		if group, leaf, ok := splitGroup(secret.Name); ok {
+			groups[group] = append(groups[group], leaf)
+			continue
+		}
+
+		singles = append(singles, secret.Name)
+	}
+
+	type listing struct {
+		title    string
+		children []string
+		isGroup  bool
+	}
+
+	var listings []listing
+
+	for group, names := range groups {
+		sort.Strings(names)
+		listings = append(listings, listing{title: group, children: names, isGroup: true})
+	}
+
+	sort.Strings(singles)
+	for _, name := range singles {
+		listings = append(listings, listing{title: name})
+	}
+
+	sort.Slice(listings, func(i, j int) bool {
+		return listings[i].title < listings[j].title
+	})
+
+	for _, item := range listings {
+		if item.isGroup {
+			fmt.Fprintln(c.Out, item.title)
+			for _, child := range item.children {
+				fmt.Fprintf(c.Out, "  %s\n", child)
+			}
+			continue
+		}
+
+		fmt.Fprintln(c.Out, item.title)
 	}
 
 	return nil
@@ -619,6 +664,22 @@ func findSecretByName(dir string, rootKey []byte, name string) (store.Secret, st
 	}
 
 	return store.Secret{}, "", false, nil
+}
+
+func splitGroup(full string) (group, name string, ok bool) {
+	parts := strings.Split(full, "/")
+	if len(parts) < 2 {
+		return "", "", false
+	}
+
+	name = parts[len(parts)-1]
+	group = strings.Join(parts[:len(parts)-1], "/")
+
+	if name == "" || group == "" {
+		return "", "", false
+	}
+
+	return group, name, true
 }
 
 func unlockRootKey(dir, password string) ([]byte, error) {

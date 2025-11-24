@@ -132,6 +132,45 @@ func TestAddListAndFetch(t *testing.T) {
 	}
 }
 
+func TestListGroupsAndUngroupedOrdering(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	add := func(name, secret string) {
+		p := &fakePrompter{
+			master:  []string{"pw"},
+			secrets: []string{secret},
+		}
+		if exit, _, errOut := runCommand(t, dataDir, p, "add", name); exit != 0 {
+			t.Fatalf("add %s failed: %s", name, errOut)
+		}
+	}
+
+	add("work/email", "a")
+	add("personal/card", "b")
+	add("personal/bank", "c")
+	add("solo", "d")
+
+	listPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	exit, out, errOut := runCommand(t, dataDir, listPrompter)
+	if exit != 0 {
+		t.Fatalf("list failed: %s", errOut)
+	}
+
+	expected := "personal\n  bank\n  card\nsolo\nwork\n  email\n"
+	if out != expected {
+		t.Fatalf("unexpected list output:\n%q\nwanted:\n%q", out, expected)
+	}
+}
+
 func TestAddFailsOnDuplicateNameCaseInsensitive(t *testing.T) {
 	dataDir := t.TempDir()
 
