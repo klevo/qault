@@ -201,14 +201,14 @@ func (c *CLI) handleInit() error {
 }
 
 func (c *CLI) handleAddArgs(args []string) error {
-	names, otpPath, err := parseAddArgs(args)
+	names, otpPath, useEditor, err := parseAddArgs(args)
 	if err != nil {
 		return err
 	}
 	if otpPath != "" {
 		return c.handleAddOTP(names, otpPath)
 	}
-	return c.handleAddSecret(names)
+	return c.handleAddSecret(names, useEditor)
 }
 
 func (c *CLI) handleRemoveArgs(args []string) error {
@@ -220,11 +220,11 @@ func (c *CLI) handleRemoveArgs(args []string) error {
 }
 
 func (c *CLI) handleEditArgs(args []string) error {
-	names, err := parseNameArgs(args, "Name is required for edit")
+	names, useEditor, err := parseEditArgs(args)
 	if err != nil {
 		return err
 	}
-	return c.handleEdit(names)
+	return c.handleEdit(names, useEditor)
 }
 
 func (c *CLI) handleMoveArgs(args []string) error {
@@ -333,7 +333,7 @@ func loadSecrets(dir string, rootKey []byte) ([]store.Secret, error) {
 	return secrets, nil
 }
 
-func (c *CLI) handleEdit(names []string) error {
+func (c *CLI) handleEdit(names []string, useEditor bool) error {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -356,9 +356,9 @@ func (c *CLI) handleEdit(names []string) error {
 		return exitError{code: 1, msg: "Secret not found"}
 	}
 
-	newSecretValue, err := c.Prompter.SecretValueWithPrompt("New secret: ")
+	newSecretValue, err := c.secretInput(useEditor, "New secret: ", secret.Secret)
 	if err != nil {
-		return fatalError(err)
+		return err
 	}
 
 	secret.Secret = newSecretValue
@@ -377,27 +377,39 @@ func (c *CLI) handleEdit(names []string) error {
 	return nil
 }
 
-func parseAddArgs(args []string) ([]string, string, error) {
+func parseAddArgs(args []string) ([]string, string, bool, error) {
 	var names []string
 	var otpPath string
+	useEditor := false
 
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-o" {
 			if otpPath != "" || i == len(args)-1 {
-				return nil, "", userError("usage: qault add NAME... [-o PATH]")
+				return nil, "", false, userError("usage: qault add NAME... [-o PATH] [-e]")
 			}
 			otpPath = args[i+1]
 			i++
 			continue
 		}
+		if args[i] == "-e" {
+			if useEditor {
+				return nil, "", false, userError("usage: qault add NAME... [-o PATH] [-e]")
+			}
+			useEditor = true
+			continue
+		}
 		names = append(names, args[i])
 	}
 
-	if len(names) == 0 {
-		return nil, "", userError("name is required for add")
+	if otpPath != "" && useEditor {
+		return nil, "", false, userError("usage: qault add NAME... [-o PATH] [-e]")
 	}
 
-	return names, otpPath, nil
+	if len(names) == 0 {
+		return nil, "", false, userError("name is required for add")
+	}
+
+	return names, otpPath, useEditor, nil
 }
 
 func parseMoveArgs(args []string) ([]string, []string, error) {
@@ -428,7 +440,30 @@ func parseMoveArgs(args []string) ([]string, []string, error) {
 	return oldNames, newNames, nil
 }
 
-func (c *CLI) handleAddSecret(names []string) error {
+func parseEditArgs(args []string) ([]string, bool, error) {
+	useEditor := false
+	var names []string
+
+	for _, arg := range args {
+		if arg == "-e" {
+			if useEditor {
+				return nil, false, userError("usage: qault edit NAME... [-e]")
+			}
+			useEditor = true
+			continue
+		}
+		names = append(names, arg)
+	}
+
+	parsedNames, err := parseNameArgs(names, "Name is required for edit")
+	if err != nil {
+		return nil, false, err
+	}
+
+	return parsedNames, useEditor, nil
+}
+
+func (c *CLI) handleAddSecret(names []string, useEditor bool) error {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
@@ -449,9 +484,9 @@ func (c *CLI) handleAddSecret(names []string) error {
 		return exitError{code: 1, msg: "Name already exists"}
 	}
 
-	secretValue, err := c.Prompter.SecretValue()
+	secretValue, err := c.secretInput(useEditor, "Secret: ", "")
 	if err != nil {
-		return fatalError(err)
+		return err
 	}
 
 	s := store.Secret{
@@ -964,6 +999,72 @@ func hasWhitespace(value string) bool {
 		}
 	}
 	return false
+}
+
+func (c *CLI) secretInput(useEditor bool, prompt, initial string) (string, error) {
+	if useEditor {
+		value, err := secretFromEditor(initial)
+		if err != nil {
+			return "", err
+		}
+		return value, nil
+	}
+
+	if prompt == "" {
+		return c.Prompter.SecretValue()
+	}
+	return c.Prompter.SecretValueWithPrompt(prompt)
+}
+
+func secretFromEditor(initial string) (string, error) {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		return "", userError("EDITOR is not set")
+	}
+
+	file, err := os.CreateTemp("", "qault-edit-*")
+	if err != nil {
+		return "", fatalError(err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	defer file.Close()
+
+	if _, err := file.WriteString(initial); err != nil {
+		return "", fatalError(err)
+	}
+
+	if err := file.Chmod(0o600); err != nil {
+		return "", fatalError(err)
+	}
+
+	cmd := buildEditorCommand(editor, path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fatalError(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fatalError(err)
+	}
+
+	value := strings.TrimRight(string(data), "\n")
+	if value == "" {
+		return "", userError("Secret cannot be empty")
+	}
+
+	return value, nil
+}
+
+func buildEditorCommand(editor, path string) *exec.Cmd {
+	if strings.Contains(editor, " ") || strings.Contains(editor, "\t") {
+		return exec.Command("sh", "-c", editor+" \"$@\"", "--", path)
+	}
+	return exec.Command(editor, path)
 }
 
 func unlockRootKey(dir, password string) ([]byte, error) {

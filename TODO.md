@@ -7,7 +7,7 @@
 - [x] Delete secrets
 - [x] Move secret (change name)
 - [x] Edit existing secrets
-- [ ] Multi line input / $EDITOR support
+- [x] Multi line input / $EDITOR support
 - [ ] Implement change-password command
 - [ ] Git integration, with HTTPS username/password fetch from the key-chain support
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)

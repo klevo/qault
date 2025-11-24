@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -369,6 +370,35 @@ func TestRemoveSecret(t *testing.T) {
 	}
 }
 
+func TestAddWithEditor(t *testing.T) {
+	dataDir := t.TempDir()
+	editor := writeEditorScript(t, "editor-secret")
+	t.Setenv("EDITOR", editor)
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "-e", "personal", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, fetchPrompter, "personal", "email"); exit != 0 {
+		t.Fatalf("fetch failed: %s", errOut)
+	} else if out != "editor-secret" {
+		t.Fatalf("unexpected fetch output: %q", out)
+	}
+}
+
 func TestRecentListsByUpdated(t *testing.T) {
 	originalNow := timeNow
 	clock := []time.Time{
@@ -490,6 +520,43 @@ func TestEditSecret(t *testing.T) {
 	}
 }
 
+func TestEditSecretWithEditor(t *testing.T) {
+	dataDir := t.TempDir()
+	editor := writeEditorScript(t, "edited-via-editor")
+	t.Setenv("EDITOR", editor)
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"first-secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "personal", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	editPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, editPrompter, "edit", "-e", "personal", "email"); exit != 0 {
+		t.Fatalf("edit failed: %s", errOut)
+	}
+
+	fetchPrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, out, errOut := runCommand(t, dataDir, fetchPrompter, "personal", "email"); exit != 0 {
+		t.Fatalf("fetch failed: %s", errOut)
+	} else if out != "edited-via-editor" {
+		t.Fatalf("unexpected fetch output after edit: %q", out)
+	}
+}
+
 func TestMoveSecret(t *testing.T) {
 	dataDir := t.TempDir()
 
@@ -606,4 +673,14 @@ func writeQRImage(path, payload string) error {
 	defer file.Close()
 
 	return png.Encode(file, img)
+}
+
+func writeEditorScript(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "editor.sh")
+	script := "#!/bin/sh\nprintf \"%s\" > \"$1\"\n"
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(script, content)), 0o700); err != nil {
+		t.Fatalf("write editor script: %v", err)
+	}
+	return path
 }

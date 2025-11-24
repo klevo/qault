@@ -43,23 +43,23 @@ Outputs the location of the data directory to stdout.
 ### Adding secrets to the vault
 
 ```sh
-qault add NAME...
+qault add NAME... [-e]
 ```
 
 Name components are required; each argument becomes one element in the stored name array (quote an argument to embed spaces inside a single element).
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
-2. Prompt for the secret value (non-empty).
+2. Prompt for the secret value (non-empty) or open `$EDITOR` when `-e` is provided (initially empty).
 3. Generate a UUID v7, create the secret JSON payload, encrypt it with the root key, and save it.
 4. Confirm the secret was saved under the provided name path.
 
 ### Editing an existing secret
 
 ```sh
-qault edit NAME...
+qault edit NAME... [-e]
 ```
 
-Replaces the secret value (prompted as `New secret:`) for the matched entry without altering the name or OTP.
+Replaces the secret value (prompted as `New secret:` or edited via `$EDITOR` when `-e` is used) for the matched entry without altering the name or OTP.
 
 #### Adding TOTP MFA authentication to existing secret
 
