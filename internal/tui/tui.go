@@ -50,6 +50,8 @@ type model struct {
 	secrets  []store.Secret
 	errMsg   string
 	loading  bool
+	width    int
+	height   int
 }
 
 var (
@@ -112,6 +114,8 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		if m.state == stateList {
 			m.list.SetSize(msg.Width, msg.Height)
 		}
@@ -126,6 +130,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateList
 		m.secrets = msg.secrets
 		m.list.SetItems(toItems(msg.secrets))
+		if m.width > 0 && m.height > 0 {
+			m.list.SetSize(m.width, m.height)
+		}
 		return m, nil
 	}
 
