@@ -29,6 +29,8 @@ While at it, I aim for post-quantum-safe storage/encryption, assuming AES-GCM wi
 
 ## 🛠️ Command Line Interface (CLI)
 
+Running `qault` without arguments currently prints `TUI will be here` as a placeholder for the upcoming terminal UI.
+
 ### Vault initialization
 
 ```sh
@@ -96,7 +98,7 @@ Asks for the current master password, then prompts twice for the new one, and re
 ### Listing secrets
 
 ```sh
-qault
+qault list
 ```
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.

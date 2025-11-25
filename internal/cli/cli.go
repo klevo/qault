@@ -112,7 +112,8 @@ func (c *CLI) handleError(err error) int {
 
 func (c *CLI) dispatch(args []string) error {
 	if len(args) == 0 {
-		return c.handleList()
+		fmt.Fprintln(c.Out, "TUI will be here")
+		return nil
 	}
 
 	switch args[0] {
@@ -124,6 +125,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleLock()
 	case "agent":
 		return c.serveAgent()
+	case "list":
+		return c.handleList()
 	case "add":
 		return c.handleAddArgs(args[1:])
 	case "rm":
@@ -721,7 +724,7 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 	for _, arg := range args {
 		if arg == "-o" {
 			if wantOTP {
-				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault NAME... [-o]")
+				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault list | qault recent | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault NAME... [-o]")
 			}
 			wantOTP = true
 			continue

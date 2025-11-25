@@ -115,7 +115,7 @@ func TestAddListAndFetch(t *testing.T) {
 	listPrompter := &fakePrompter{
 		master: []string{"pw"},
 	}
-	exit, listOut, errOut := runCommand(t, dataDir, listPrompter)
+	exit, listOut, errOut := runCommand(t, dataDir, listPrompter, "list")
 	if exit != 0 {
 		t.Fatalf("list failed: %s", errOut)
 	}
@@ -352,7 +352,7 @@ func TestRemoveSecret(t *testing.T) {
 	listPrompter := &fakePrompter{
 		master: []string{"pw"},
 	}
-	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter, "list"); exit != 0 {
 		t.Fatalf("list failed: %s", errOut)
 	} else if strings.Contains(listOut, "personal") {
 		t.Fatalf("expected secret to be removed, got list: %q", listOut)
@@ -513,7 +513,7 @@ func TestEditSecret(t *testing.T) {
 	listPrompter := &fakePrompter{
 		master: []string{"pw"},
 	}
-	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter, "list"); exit != 0 {
 		t.Fatalf("list failed: %s", errOut)
 	} else if !strings.Contains(listOut, "personal email") {
 		t.Fatalf("list missing updated entry: %q", listOut)
@@ -668,7 +668,7 @@ func TestMoveSecret(t *testing.T) {
 	listPrompter := &fakePrompter{
 		master: []string{"pw"},
 	}
-	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter); exit != 0 {
+	if exit, listOut, errOut := runCommand(t, dataDir, listPrompter, "list"); exit != 0 {
 		t.Fatalf("list failed: %s", errOut)
 	} else if !strings.Contains(listOut, "personal login") {
 		t.Fatalf("expected renamed entry in list, got: %q", listOut)
