@@ -25,6 +25,7 @@ import (
 	ifs "qault/internal/fs"
 	"qault/internal/otp"
 	"qault/internal/store"
+	"qault/internal/tui"
 )
 
 type exitError struct {
@@ -112,8 +113,7 @@ func (c *CLI) handleError(err error) int {
 
 func (c *CLI) dispatch(args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(c.Out, "TUI will be here")
-		return nil
+		return tui.Run(c.Out, c.Err)
 	}
 
 	switch args[0] {

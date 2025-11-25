@@ -29,7 +29,7 @@ While at it, I aim for post-quantum-safe storage/encryption, assuming AES-GCM wi
 
 ## 🛠️ Command Line Interface (CLI)
 
-Running `qault` without arguments currently prints `TUI will be here` as a placeholder for the upcoming terminal UI.
+Running `qault` without arguments launches the Bubble Tea powered TUI: first screen prompts for your master password and, after unlock, switches to a filterable list of decrypted secret names held in memory.
 
 ### Vault initialization
 
