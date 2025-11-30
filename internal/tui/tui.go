@@ -173,7 +173,7 @@ func newModel() model {
 	// Setup add item inputs
 	addItemName.SetHeight(3)
 	addItemSecret.SetHeight(5)
-	addItemOTP.Placeholder = "/path/to/otp.png"
+	addItemOTP.Placeholder = "/path/to/qr-code.png"
 
 	// Setup list
 	delegate := newItemDelegate(delegateKeys)
@@ -508,7 +508,7 @@ func (m model) ItemFormView() string {
 		"Secret",
 		m.addItemSecret.View(),
 		"",
-		"OTP setup QR image path",
+		"OTP setup QR code",
 		m.addItemOTP.View(),
 	}
 	if m.addItemError != "" {

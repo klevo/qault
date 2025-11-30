@@ -193,8 +193,8 @@ func newItemDelegateKeyMap() *itemDelegateKeyMap {
 			key.WithHelp("enter", "edit"),
 		),
 		copy: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("y", "copy secret"),
+			key.WithKeys("i"),
+			key.WithHelp("i", "copy secret"),
 		),
 		copyUser: key.NewBinding(
 			key.WithKeys("u"),
