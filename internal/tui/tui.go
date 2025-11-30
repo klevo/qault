@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,7 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	icrypto "qault/internal/crypto"
+	"qault/internal/auth"
 	ifs "qault/internal/fs"
 	"qault/internal/store"
 )
@@ -116,7 +113,6 @@ type model struct {
 	keys            *listKeyMap
 	delegateKeys    *itemDelegateKeyMap
 	dataDir         string
-	rootKey         []byte
 }
 
 type screenState string
@@ -232,19 +228,12 @@ func (m model) LockUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 		if msg.Type == tea.KeyEnter {
 			m.masterPassInput.Err = nil
 
-			dir, rootKey, err := unlockVault(m.masterPassInput.Value())
+			dir, items, err := unlockVault(m.masterPassInput.Value())
 			if err != nil {
 				m.masterPassInput.Err = err
 				return m, nil
 			}
 
-			items, err := loadVaultItems(dir, rootKey)
-			if err != nil {
-				m.masterPassInput.Err = err
-				return m, nil
-			}
-
-			m.rootKey = rootKey
 			m.dataDir = dir
 			m.screen = screenList
 			m.delegateKeys.remove.SetEnabled(len(items) > 0)
@@ -510,96 +499,32 @@ func Run() error {
 	return err
 }
 
-type lockFile struct {
-	Salt       string `json:"salt"`
-	Nonce      string `json:"nonce"`
-	Ciphertext string `json:"ciphertext"`
-}
-
-var errWrongMasterPassword = errors.New("Incorrect master password")
-
-func unlockVault(password string) (string, []byte, error) {
+func unlockVault(password string) (string, []list.Item, error) {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return "", nil, err
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return "", nil, err
 	}
 
-	rootKey, err := unlockRootKey(dir, password)
+	rootKey, err := auth.UnlockRootKey(dir, password)
 	if err != nil {
 		return "", nil, err
 	}
 
-	return dir, rootKey, nil
+	secrets, err := auth.LoadSecrets(dir, rootKey)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return dir, toListItems(secrets), nil
 }
 
-func ensureInitialized(dir string) error {
-	hasLock, err := ifs.HasLock(dir)
-	if err != nil {
-		return err
-	}
-
-	if !hasLock {
-		return errors.New("Vault is not initialized")
-	}
-
-	return nil
-}
-
-func unlockRootKey(dir, password string) ([]byte, error) {
-	data, err := store.ReadFile(ifs.LockPath(dir))
-	if err != nil {
-		return nil, err
-	}
-
-	var lock lockFile
-	if err := json.Unmarshal(data, &lock); err != nil {
-		return nil, err
-	}
-
-	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
-	if err != nil {
-		return nil, err
-	}
-
-	rootKey, err := icrypto.DeriveRootKey(password, salt)
-	if err != nil {
-		return nil, err
-	}
-
-	env := icrypto.Envelope{
-		Nonce:      lock.Nonce,
-		Ciphertext: lock.Ciphertext,
-	}
-
-	if _, err := icrypto.DecryptWithKey(rootKey, env); err != nil {
-		return nil, errWrongMasterPassword
-	}
-
-	return rootKey, nil
-}
-
-func loadVaultItems(dir string, rootKey []byte) ([]list.Item, error) {
-	files, err := ifs.ListSecretFiles(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var items []item
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return nil, err
-		}
-
+func toListItems(secrets []store.Secret) []list.Item {
+	items := make([]item, 0, len(secrets))
+	for _, secret := range secrets {
 		items = append(items, item{
 			name:      strings.Join(secret.Name, "\n"),
 			secret:    secret.Secret,
@@ -616,6 +541,5 @@ func loadVaultItems(dir string, rootKey []byte) ([]list.Item, error) {
 	for i := range items {
 		listItems[i] = items[i]
 	}
-
-	return listItems, nil
+	return listItems
 }

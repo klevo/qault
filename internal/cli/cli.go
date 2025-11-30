@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
+	"qault/internal/auth"
 	icrypto "qault/internal/crypto"
 	ifs "qault/internal/fs"
 	"qault/internal/otp"
@@ -46,14 +45,6 @@ func userError(msg string) exitError {
 func fatalError(err error) exitError {
 	return exitError{code: 1, err: err}
 }
-
-type lockFile struct {
-	Salt       string `json:"salt"`
-	Nonce      string `json:"nonce"`
-	Ciphertext string `json:"ciphertext"`
-}
-
-var errWrongMasterKey = errors.New("Incorrect master password")
 
 type Prompter interface {
 	MasterPassword() (string, error)
@@ -173,23 +164,7 @@ func (c *CLI) handleInit() error {
 		return fatalError(err)
 	}
 
-	env, err := icrypto.EncryptWithKey(rootKey, []byte(lockValue))
-	if err != nil {
-		return fatalError(err)
-	}
-
-	lock := lockFile{
-		Salt:       base64.StdEncoding.EncodeToString(salt),
-		Nonce:      env.Nonce,
-		Ciphertext: env.Ciphertext,
-	}
-
-	payload, err := json.Marshal(lock)
-	if err != nil {
-		return fatalError(err)
-	}
-
-	if err := store.WriteFile(ifs.LockPath(dir), payload); err != nil {
+	if err := auth.WriteLockFile(dir, lockValue, salt, rootKey); err != nil {
 		return fatalError(err)
 	}
 
@@ -230,11 +205,11 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
-	lock, salt, err := readLockFile(dir)
+	lock, salt, err := auth.ReadLockFile(dir)
 	if err != nil {
 		return err
 	}
@@ -244,7 +219,7 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return fatalError(err)
 	}
 
-	oldRootKey, lockValue, err := deriveLockValue(lock, salt, currentPassword)
+	oldRootKey, lockValue, err := auth.DeriveLockValue(lock, salt, currentPassword)
 	if err != nil {
 		return c.handleMasterKeyError(err)
 	}
@@ -268,7 +243,7 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return err
 	}
 
-	if err := writeLockFile(dir, lockValue, newSalt, newRootKey); err != nil {
+	if err := auth.WriteLockFile(dir, lockValue, newSalt, newRootKey); err != nil {
 		return err
 	}
 
@@ -290,7 +265,7 @@ func (c *CLI) handleRemove(names []string) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -320,7 +295,7 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -388,37 +363,13 @@ func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) error {
 	return nil
 }
 
-func loadSecrets(dir string, rootKey []byte) ([]store.Secret, error) {
-	files, err := ifs.ListSecretFiles(dir)
-	if err != nil {
-		return nil, fatalError(err)
-	}
-
-	var secrets []store.Secret
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return nil, fatalError(err)
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
-		}
-
-		secrets = append(secrets, secret)
-	}
-
-	return secrets, nil
-}
-
 func (c *CLI) handleEdit(names []string, useEditor bool) error {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -548,7 +499,7 @@ func (c *CLI) handleAddSecret(names []string, useEditor bool) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -599,7 +550,7 @@ func (c *CLI) handleAddOTP(names []string, qrPath string) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -662,7 +613,7 @@ func (c *CLI) handleListSorted(sortByUpdated bool) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -671,7 +622,7 @@ func (c *CLI) handleListSorted(sortByUpdated bool) error {
 		return c.handleMasterKeyError(err)
 	}
 
-	secrets, err := loadSecrets(dir, rootKey)
+	secrets, err := auth.LoadSecrets(dir, rootKey)
 	if err != nil {
 		return err
 	}
@@ -741,7 +692,7 @@ func (c *CLI) handleFetchSecret(names []string) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -772,7 +723,7 @@ func (c *CLI) handleFetchOTP(names []string) error {
 		return fatalError(err)
 	}
 
-	if err := ensureInitialized(dir); err != nil {
+	if err := auth.EnsureInitialized(dir); err != nil {
 		return fatalError(err)
 	}
 
@@ -805,26 +756,13 @@ func (c *CLI) handleFetchOTP(names []string) error {
 	return nil
 }
 
-func ensureInitialized(dir string) error {
-	hasLock, err := ifs.HasLock(dir)
-	if err != nil {
-		return err
-	}
-
-	if !hasLock {
-		return errors.New("Vault is not initialized")
-	}
-
-	return nil
-}
-
 func (c *CLI) getRootKeyWithFallback(dir string) ([]byte, error) {
 	password, err := c.Prompter.MasterPassword()
 	if err != nil {
 		return nil, err
 	}
 
-	rootKey, err := unlockRootKey(dir, password)
+	rootKey, err := auth.UnlockRootKey(dir, password)
 	if err != nil {
 		return nil, err
 	}
@@ -833,7 +771,7 @@ func (c *CLI) getRootKeyWithFallback(dir string) ([]byte, error) {
 }
 
 func (c *CLI) handleMasterKeyError(err error) error {
-	if errors.Is(err, errWrongMasterKey) {
+	if errors.Is(err, auth.ErrWrongMasterPassword) {
 		return exitError{code: 1, msg: "Incorrect master password"}
 	}
 	return fatalError(err)
@@ -1058,39 +996,6 @@ func (c *CLI) promptNewPassword() (string, error) {
 	return c.Prompter.NewMasterPassword()
 }
 
-func unlockRootKey(dir, password string) ([]byte, error) {
-	data, err := store.ReadFile(ifs.LockPath(dir))
-	if err != nil {
-		return nil, err
-	}
-
-	var lock lockFile
-	if err := json.Unmarshal(data, &lock); err != nil {
-		return nil, err
-	}
-
-	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
-	if err != nil {
-		return nil, err
-	}
-
-	rootKey, err := icrypto.DeriveRootKey(password, salt)
-	if err != nil {
-		return nil, err
-	}
-
-	env := icrypto.Envelope{
-		Nonce:      lock.Nonce,
-		Ciphertext: lock.Ciphertext,
-	}
-
-	if _, err := icrypto.DecryptWithKey(rootKey, env); err != nil {
-		return nil, errWrongMasterKey
-	}
-
-	return rootKey, nil
-}
-
 type TerminalPrompter struct {
 	Err    io.Writer
 	inputs []string
@@ -1214,66 +1119,4 @@ func isTerminal(w io.Writer) bool {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	return false
-}
-
-func readLockFile(dir string) (lockFile, []byte, error) {
-	data, err := store.ReadFile(ifs.LockPath(dir))
-	if err != nil {
-		return lockFile{}, nil, err
-	}
-
-	var lock lockFile
-	if err := json.Unmarshal(data, &lock); err != nil {
-		return lockFile{}, nil, err
-	}
-
-	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
-	if err != nil {
-		return lockFile{}, nil, err
-	}
-
-	return lock, salt, nil
-}
-
-func deriveLockValue(lock lockFile, salt []byte, password string) ([]byte, string, error) {
-	rootKey, err := icrypto.DeriveRootKey(password, salt)
-	if err != nil {
-		return nil, "", err
-	}
-
-	env := icrypto.Envelope{
-		Nonce:      lock.Nonce,
-		Ciphertext: lock.Ciphertext,
-	}
-
-	value, err := icrypto.DecryptWithKey(rootKey, env)
-	if err != nil {
-		return nil, "", errWrongMasterKey
-	}
-
-	return rootKey, string(value), nil
-}
-
-func writeLockFile(dir, lockValue string, salt, rootKey []byte) error {
-	env, err := icrypto.EncryptWithKey(rootKey, []byte(lockValue))
-	if err != nil {
-		return fatalError(err)
-	}
-
-	lock := lockFile{
-		Salt:       base64.StdEncoding.EncodeToString(salt),
-		Nonce:      env.Nonce,
-		Ciphertext: env.Ciphertext,
-	}
-
-	payload, err := json.Marshal(lock)
-	if err != nil {
-		return fatalError(err)
-	}
-
-	if err := store.WriteFile(ifs.LockPath(dir), payload); err != nil {
-		return fatalError(err)
-	}
-
-	return nil
 }
