@@ -301,6 +301,10 @@ func (c *CLI) handleRemove(names []string) error {
 		return fatalError(err)
 	}
 
+	if err := gitrepo.CommitFiles(dir, "secret deleted", path); err != nil {
+		return fatalError(err)
+	}
+
 	return nil
 }
 

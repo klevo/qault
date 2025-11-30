@@ -78,6 +78,23 @@ func gitHeadMessage(t *testing.T, repo string) string {
 	return strings.TrimSpace(string(output))
 }
 
+func gitHeadFiles(t *testing.T, repo string) []string {
+	t.Helper()
+	cmd := exec.Command("git", "-C", repo, "log", "-1", "--name-only", "--pretty=")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log files: %v (%s)", err, string(output))
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if line == "" {
+			continue
+		}
+		files = append(files, strings.TrimSpace(line))
+	}
+	return files
+}
+
 func TestInitCreatesLockFile(t *testing.T) {
 	dataDir := t.TempDir()
 
@@ -592,6 +609,24 @@ func TestChangeMasterPassword(t *testing.T) {
 	if msg := gitHeadMessage(t, repo); msg != "master password changed" {
 		t.Fatalf("unexpected head message after password change: %q", msg)
 	}
+	files := gitHeadFiles(t, repo)
+	if len(files) == 0 {
+		t.Fatalf("expected files in commit")
+	}
+	contains := func(target string) bool {
+		for _, f := range files {
+			if f == target {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains(".lock") {
+		t.Fatalf("expected .lock in commit files, got %v", files)
+	}
+	if len(files) < 2 {
+		t.Fatalf("expected secret files included in commit, got %v", files)
+	}
 }
 
 func TestChangeMasterPasswordRejectsWrongCurrent(t *testing.T) {
@@ -757,6 +792,37 @@ func TestMoveSecretConflicts(t *testing.T) {
 		t.Fatalf("expected move conflict to fail")
 	} else if !strings.Contains(errOut, "Name already exists") {
 		t.Fatalf("unexpected conflict error: %q", errOut)
+	}
+}
+
+func TestRemoveCommitsGit(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	removePrompter := &fakePrompter{
+		master: []string{"pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, removePrompter, "rm", "email"); exit != 0 {
+		t.Fatalf("rm failed: %s", errOut)
+	}
+
+	repo := filepath.Join(dataDir, "qault")
+	if msg := gitHeadMessage(t, repo); msg != "secret deleted" {
+		t.Fatalf("unexpected head message: %q", msg)
 	}
 }
 

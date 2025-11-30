@@ -850,7 +850,10 @@ func (m *model) deleteSecret(path string) error {
 	if path == "" {
 		return errors.New("No secret selected")
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return gitrepo.CommitFiles(m.dataDir, "secret deleted", path)
 }
 
 func readSecret(path string, rootKey []byte) (store.Secret, error) {
