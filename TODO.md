@@ -2,7 +2,6 @@
 - [x] main.go tests
 - [x] Handle adding secret with already existing name.
 - [x] Tests.
-- [x] Agent that allows the keychain to be unlocked for a few minutes.
 - [x] Interrupt during entering master password causes terminal input to remain hidden.
 - [x] Delete secrets
 - [x] Move secret (change name)
@@ -12,5 +11,4 @@
 - [ ] Implement -g argument for adding and editing password, that generates a strong password and outputs it
 - [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
-- [ ] Unlock command to accept argument to keep unlocked for X minutes
 - [ ] Experiment with https://github.com/charmbracelet/bubbletea

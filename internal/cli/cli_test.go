@@ -52,7 +52,6 @@ func runCommand(t *testing.T, dataDir string, prompter Prompter, args ...string)
 	t.Helper()
 
 	t.Setenv("XDG_DATA_HOME", dataDir)
-	t.Setenv("QAULT_INLINE_AGENT", "1")
 
 	var out bytes.Buffer
 	var err bytes.Buffer
@@ -207,69 +206,6 @@ func TestFetchWithIncorrectPassword(t *testing.T) {
 
 	if !strings.Contains(errOut, "Incorrect master password") {
 		t.Fatalf("expected incorrect password message, got: %q", errOut)
-	}
-}
-
-func TestUnlockAndLockFlow(t *testing.T) {
-	dataDir := t.TempDir()
-
-	initPrompter := &fakePrompter{
-		newMaster: []string{"pw", "pw"},
-	}
-	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
-		t.Fatalf("init failed: %s", errOut)
-	}
-
-	addPrompter := &fakePrompter{
-		master:  []string{"pw"},
-		secrets: []string{"secret"},
-	}
-	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
-		t.Fatalf("add failed: %s", errOut)
-	}
-
-	unlockPrompter := &fakePrompter{
-		master: []string{"pw"},
-	}
-	if exit, _, errOut := runCommand(t, dataDir, unlockPrompter, "unlock"); exit != 0 {
-		t.Fatalf("unlock failed: %s", errOut)
-	}
-
-	agentFetchPrompter := &fakePrompter{
-		master: []string{"unused"},
-	}
-	exit, fetchOut, errOut := runCommand(t, dataDir, agentFetchPrompter, "email")
-	if exit != 0 {
-		t.Fatalf("fetch via agent failed: %s", errOut)
-	}
-	if fetchOut != "secret" {
-		t.Fatalf("unexpected fetch output via agent: %q", fetchOut)
-	}
-
-	if exit, _, errOut := runCommand(t, dataDir, &fakePrompter{}, "lock"); exit != 0 {
-		t.Fatalf("lock failed: %s", errOut)
-	}
-
-	wrongPrompter := &fakePrompter{
-		master: []string{"wrong"},
-	}
-	exit, _, errOut = runCommand(t, dataDir, wrongPrompter, "email")
-	if exit == 0 {
-		t.Fatalf("expected fetch to fail with incorrect password after locking")
-	}
-	if !strings.Contains(errOut, "Incorrect master password") {
-		t.Fatalf("expected incorrect password message after locking, got: %q", errOut)
-	}
-
-	correctPrompter := &fakePrompter{
-		master: []string{"pw"},
-	}
-	exit, fetchOut, errOut = runCommand(t, dataDir, correctPrompter, "email")
-	if exit != 0 {
-		t.Fatalf("fetch after relock failed: %s", errOut)
-	}
-	if fetchOut != "secret" {
-		t.Fatalf("unexpected fetch output after relock: %q", fetchOut)
 	}
 }
 

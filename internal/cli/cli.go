@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 
-	"qault/internal/agent"
 	icrypto "qault/internal/crypto"
 	ifs "qault/internal/fs"
 	"qault/internal/otp"
@@ -118,12 +117,6 @@ func (c *CLI) dispatch(args []string) error {
 	switch args[0] {
 	case "init":
 		return c.handleInit()
-	case "unlock":
-		return c.handleUnlock()
-	case "lock":
-		return c.handleLock()
-	case "agent":
-		return c.serveAgent()
 	case "add":
 		return c.handleAddArgs(args[1:])
 	case "rm":
@@ -278,10 +271,6 @@ func (c *CLI) handleChangeMasterPassword() error {
 	if err := writeLockFile(dir, lockValue, newSalt, newRootKey); err != nil {
 		return err
 	}
-
-	sock := agent.SocketPath(dir)
-	_ = agent.Lock(sock)
-	_ = waitForAgentStop(sock, 10, 50*time.Millisecond)
 
 	fmt.Fprintln(c.Out, "Master password updated")
 	return nil
@@ -723,7 +712,7 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 	for _, arg := range args {
 		if arg == "-o" {
 			if wantOTP {
-				return nil, false, userError("usage: qault list | qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault recent | qault NAME... [-o]")
+				return nil, false, userError("usage: qault list | qault init | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault recent | qault NAME... [-o]")
 			}
 			wantOTP = true
 			continue
@@ -816,119 +805,6 @@ func (c *CLI) handleFetchOTP(names []string) error {
 	return nil
 }
 
-func (c *CLI) handleUnlock() error {
-	dir, err := ifs.EnsureDataDir()
-	if err != nil {
-		return fatalError(err)
-	}
-
-	if err := ensureInitialized(dir); err != nil {
-		return fatalError(err)
-	}
-
-	sock := agent.SocketPath(dir)
-
-	if _, ok, _ := agent.FetchRootKey(sock); ok {
-		fmt.Fprintf(c.Out, "Vault is already unlocked\n")
-		return nil
-	}
-
-	password, err := c.Prompter.MasterPassword()
-	if err != nil {
-		return fatalError(err)
-	}
-
-	rootKey, err := unlockRootKey(dir, password)
-	if err != nil {
-		return c.handleMasterKeyError(err)
-	}
-
-	ttl := 5 * time.Minute
-
-	if os.Getenv("QAULT_INLINE_AGENT") == "1" {
-		go func() {
-			_ = agent.Serve(rootKey, ttl, sock)
-		}()
-	} else {
-		cmd := exec.Command(os.Args[0], "agent")
-		cmd.Env = append(os.Environ(), fmt.Sprintf("QAULT_AGENT_TTL=%d", int64(ttl.Seconds())))
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			return fatalError(err)
-		}
-
-		go func() {
-			defer stdin.Close()
-			_ = json.NewEncoder(stdin).Encode(base64.StdEncoding.EncodeToString(rootKey))
-		}()
-
-		if err := cmd.Start(); err != nil {
-			return fatalError(err)
-		}
-	}
-
-	if err := waitForAgent(sock, 10, 50*time.Millisecond); err != nil {
-		return fatalError(err)
-	}
-
-	fmt.Fprintf(c.Out, "Vault unlocked for %s\n", ttl)
-	return nil
-}
-
-func (c *CLI) handleLock() error {
-	dir, err := ifs.EnsureDataDir()
-	if err != nil {
-		return fatalError(err)
-	}
-	sock := agent.SocketPath(dir)
-
-	if err := agent.Lock(sock); err != nil {
-		fmt.Fprintln(c.Err, "Vault is already locked")
-		return nil
-	}
-
-	_ = waitForAgentStop(sock, 10, 50*time.Millisecond)
-
-	fmt.Fprintln(c.Out, "Vault locked")
-	return nil
-}
-
-func (c *CLI) serveAgent() error {
-	dir, err := ifs.EnsureDataDir()
-	if err != nil {
-		return err
-	}
-	sock := agent.SocketPath(dir)
-
-	ttl := 5 * time.Minute
-	if v := os.Getenv("QAULT_AGENT_TTL"); v != "" {
-		if seconds, err := parseTTLSeconds(v); err == nil {
-			ttl = seconds
-		}
-	}
-
-	decoder := json.NewDecoder(os.Stdin)
-	var keyB64 string
-	if err := decoder.Decode(&keyB64); err != nil {
-		return err
-	}
-
-	rootKey, err := base64.StdEncoding.DecodeString(keyB64)
-	if err != nil {
-		return err
-	}
-
-	return agent.Serve(rootKey, ttl, sock)
-}
-
-func parseTTLSeconds(v string) (time.Duration, error) {
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return time.Duration(n) * time.Second, nil
-}
-
 func ensureInitialized(dir string) error {
 	hasLock, err := ifs.HasLock(dir)
 	if err != nil {
@@ -943,11 +819,6 @@ func ensureInitialized(dir string) error {
 }
 
 func (c *CLI) getRootKeyWithFallback(dir string) ([]byte, error) {
-	sock := agent.SocketPath(dir)
-	if key, ok, _ := agent.FetchRootKey(sock); ok {
-		return key, nil
-	}
-
 	password, err := c.Prompter.MasterPassword()
 	if err != nil {
 		return nil, err
@@ -1218,26 +1089,6 @@ func unlockRootKey(dir, password string) ([]byte, error) {
 	}
 
 	return rootKey, nil
-}
-
-func waitForAgent(sock string, attempts int, delay time.Duration) error {
-	for i := 0; i < attempts; i++ {
-		if _, ok, _ := agent.FetchRootKey(sock); ok {
-			return nil
-		}
-		time.Sleep(delay)
-	}
-	return errors.New("agent did not start")
-}
-
-func waitForAgentStop(sock string, attempts int, delay time.Duration) error {
-	for i := 0; i < attempts; i++ {
-		if _, ok, _ := agent.FetchRootKey(sock); !ok {
-			return nil
-		}
-		time.Sleep(delay)
-	}
-	return errors.New("agent did not stop")
 }
 
 type TerminalPrompter struct {

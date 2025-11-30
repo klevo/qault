@@ -17,7 +17,6 @@ While at it, I aim for post-quantum-safe storage/encryption, assuming AES-GCM wi
 * Command-line interface that follows simple UNIX philosophy.
 * Unlock with a master password.
 * Favor post-quantum-friendly crypto from Go’s standard library.
-* Optional agent mode to keep the vault unlocked briefly.
 * TOTP MFA Authentication support.
 
 ## 🧠 Design
@@ -129,18 +128,6 @@ qault NAME... -o
 ```
 
 Outputs the OTP if present; otherwise notify the user and exit with code 1.
-
-### Unlocking the vault for 5 minutes (agent mode)
-
-```sh
-qault unlock
-```
-
-Upon entering and validating the master key, spawn an agent that caches the derived encryption key and listens on a socket in the data dir. The agent self-terminates after 5 minutes. You can terminate it manually to lock your vault with:
-
-```sh
-qault lock
-```
 
 ## 🧪 Development
 
