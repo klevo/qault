@@ -559,15 +559,19 @@ func parseNameInput(name string) ([]string, error) {
 }
 
 func normalizeNames(names []string) string {
+	return strings.Join(normalizeNameParts(names), "\x00")
+}
+
+func normalizeNameParts(names []string) []string {
 	normalized := make([]string, len(names))
 	for i, name := range names {
 		normalized[i] = strings.ToLower(strings.TrimSpace(name))
 	}
-	return strings.Join(normalized, "\x00")
+	return normalized
 }
 
 func (m *model) reloadList() (tea.Cmd, error) {
-	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	records, err := m.loadRecords()
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +589,7 @@ func (m *model) saveNew(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error)
 		return nil, nil, errors.New("Secret cannot be empty")
 	}
 
-	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	records, err := m.loadRecords()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -639,7 +643,7 @@ func (m *model) saveEdit(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error
 		return nil, nil, errors.New("Unable to locate selected secret")
 	}
 
-	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	records, err := m.loadRecords()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -691,4 +695,8 @@ func readSecret(path string, rootKey []byte) (store.Secret, error) {
 		return store.Secret{}, err
 	}
 	return store.DecryptSecret(rootKey, data)
+}
+
+func (m *model) loadRecords() ([]auth.SecretRecord, error) {
+	return auth.LoadSecretRecords(m.dataDir, m.rootKey)
 }

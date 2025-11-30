@@ -108,30 +108,24 @@ func WriteLockFile(dir, lockValue string, salt, rootKey []byte) error {
 }
 
 func LoadSecrets(dir string, rootKey []byte) ([]store.Secret, error) {
-	files, err := ifs.ListSecretFiles(dir)
+	records, err := LoadSecretRecords(dir, rootKey)
 	if err != nil {
 		return nil, err
 	}
 
-	var secrets []store.Secret
-	for _, path := range files {
-		data, err := store.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-
-		secret, err := store.DecryptSecret(rootKey, data)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to decrypt secret %s", filepath.Base(path))
-		}
-
-		secrets = append(secrets, secret)
+	secrets := make([]store.Secret, len(records))
+	for i, record := range records {
+		secrets[i] = record.Secret
 	}
 
 	return secrets, nil
 }
 
 func LoadSecretRecords(dir string, rootKey []byte) ([]SecretRecord, error) {
+	return loadSecretRecords(dir, rootKey)
+}
+
+func loadSecretRecords(dir string, rootKey []byte) ([]SecretRecord, error) {
 	files, err := ifs.ListSecretFiles(dir)
 	if err != nil {
 		return nil, err

@@ -21,6 +21,7 @@ This repository hosts **qault**, a Go-based CLI password manager hardened for po
 - Keep packages cohesive; avoid stutter (`store.Secret`, not `store.StoreSecret`).
 - Avoid panics in library code; return errors with context (`fmt.Errorf("unlock: %w", err)`).
 - Do not log secrets or master passwords; prefer structured logs with redacted fields when logging is necessary.
+- For Bubble Tea TUI code, keep `Update` handlers side-effect free beyond returning commands, and keep `View` functions focused on rendering with no state mutation.
 
 ## Testing Guidelines
 - Prefer table-driven tests and `_test.go` files adjacent to code.
