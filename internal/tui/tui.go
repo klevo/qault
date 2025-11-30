@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +16,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	icrypto "qault/internal/crypto"
+	ifs "qault/internal/fs"
+	"qault/internal/store"
 )
 
 var (
@@ -105,9 +113,10 @@ type model struct {
 	formKeys        *itemFormKeyMap
 	formHelp        help.Model
 	pendingDelete   *deleteItemRequestedMsg
-	itemGenerator   *randomItemGenerator
 	keys            *listKeyMap
 	delegateKeys    *itemDelegateKeyMap
+	dataDir         string
+	rootKey         []byte
 }
 
 type screenState string
@@ -127,7 +136,6 @@ const (
 
 func newModel() model {
 	var (
-		itemGenerator   randomItemGenerator
 		delegateKeys    = newItemDelegateKeyMap()
 		listKeys        = newListKeyMap()
 		formKeys        = newItemFormKeyMap()
@@ -175,17 +183,7 @@ func newModel() model {
 		formHelp:        formHelp,
 		keys:            listKeys,
 		delegateKeys:    delegateKeys,
-		itemGenerator:   &itemGenerator,
 	}
-}
-
-func (m model) PopulateList() (tea.Model, tea.Cmd) {
-	const numItems = 24
-	items := make([]list.Item, numItems)
-	for i := 0; i < numItems; i++ {
-		items[i] = m.itemGenerator.next()
-	}
-	return m, m.list.SetItems(items)
 }
 
 func (m model) Init() tea.Cmd {
@@ -232,14 +230,26 @@ func (m model) LockUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyEnter {
-			if m.masterPassInput.Value() == PASSWORD {
-				m.screen = screenList
-				newModel, cmd := m.PopulateList()
-				return newModel, append(cmds, cmd)
-			} else {
-				m.masterPassInput.Err = fmt.Errorf("Incorrect password")
+			m.masterPassInput.Err = nil
+
+			dir, rootKey, err := unlockVault(m.masterPassInput.Value())
+			if err != nil {
+				m.masterPassInput.Err = err
 				return m, nil
 			}
+
+			items, err := loadVaultItems(dir, rootKey)
+			if err != nil {
+				m.masterPassInput.Err = err
+				return m, nil
+			}
+
+			m.rootKey = rootKey
+			m.dataDir = dir
+			m.screen = screenList
+			m.delegateKeys.remove.SetEnabled(len(items) > 0)
+			cmd := m.list.SetItems(items)
+			return m, append(cmds, cmd)
 		}
 	}
 
@@ -498,4 +508,114 @@ func (m model) confirmationHeight() int {
 func Run() error {
 	_, err := tea.NewProgram(newModel(), tea.WithAltScreen()).Run()
 	return err
+}
+
+type lockFile struct {
+	Salt       string `json:"salt"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+var errWrongMasterPassword = errors.New("Incorrect master password")
+
+func unlockVault(password string) (string, []byte, error) {
+	dir, err := ifs.EnsureDataDir()
+	if err != nil {
+		return "", nil, err
+	}
+
+	if err := ensureInitialized(dir); err != nil {
+		return "", nil, err
+	}
+
+	rootKey, err := unlockRootKey(dir, password)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return dir, rootKey, nil
+}
+
+func ensureInitialized(dir string) error {
+	hasLock, err := ifs.HasLock(dir)
+	if err != nil {
+		return err
+	}
+
+	if !hasLock {
+		return errors.New("Vault is not initialized")
+	}
+
+	return nil
+}
+
+func unlockRootKey(dir, password string) ([]byte, error) {
+	data, err := store.ReadFile(ifs.LockPath(dir))
+	if err != nil {
+		return nil, err
+	}
+
+	var lock lockFile
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return nil, err
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(lock.Salt)
+	if err != nil {
+		return nil, err
+	}
+
+	rootKey, err := icrypto.DeriveRootKey(password, salt)
+	if err != nil {
+		return nil, err
+	}
+
+	env := icrypto.Envelope{
+		Nonce:      lock.Nonce,
+		Ciphertext: lock.Ciphertext,
+	}
+
+	if _, err := icrypto.DecryptWithKey(rootKey, env); err != nil {
+		return nil, errWrongMasterPassword
+	}
+
+	return rootKey, nil
+}
+
+func loadVaultItems(dir string, rootKey []byte) ([]list.Item, error) {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []item
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		secret, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return nil, err
+		}
+
+		items = append(items, item{
+			name:      strings.Join(secret.Name, "\n"),
+			secret:    secret.Secret,
+			otp:       secret.OTP != nil,
+			updatedAt: secret.UpdatedAt,
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].name) < strings.ToLower(items[j].name)
+	})
+
+	listItems := make([]list.Item, len(items))
+	for i := range items {
+		listItems[i] = items[i]
+	}
+
+	return listItems, nil
 }
