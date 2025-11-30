@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,6 +68,16 @@ func runCommand(t *testing.T, dataDir string, prompter Prompter, args ...string)
 	return exit, out.String(), err.String()
 }
 
+func gitHeadMessage(t *testing.T, repo string) string {
+	t.Helper()
+	cmd := exec.Command("git", "-C", repo, "log", "-1", "--pretty=%s")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v (%s)", err, string(output))
+	}
+	return strings.TrimSpace(string(output))
+}
+
 func TestInitCreatesLockFile(t *testing.T) {
 	dataDir := t.TempDir()
 
@@ -82,6 +93,83 @@ func TestInitCreatesLockFile(t *testing.T) {
 	lockPath := filepath.Join(dataDir, "qault", ".lock")
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("lock file not created: %v", err)
+	}
+}
+
+func TestInitInitializesGitRepoAndCommitsLock(t *testing.T) {
+	dataDir := t.TempDir()
+
+	prompter := &fakePrompter{
+		newMaster: []string{"strong-password", "strong-password"},
+	}
+
+	if exit, _, errOut := runCommand(t, dataDir, prompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	repo := filepath.Join(dataDir, "qault")
+	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+		t.Fatalf("git repo not initialized: %v", err)
+	}
+
+	if msg := gitHeadMessage(t, repo); msg != "master password changed" {
+		t.Fatalf("unexpected head message: %q", msg)
+	}
+}
+
+func TestAddSecretCommitsGit(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	repo := filepath.Join(dataDir, "qault")
+	if msg := gitHeadMessage(t, repo); msg != "secret added" {
+		t.Fatalf("unexpected head message: %q", msg)
+	}
+}
+
+func TestEditSecretCommitsGit(t *testing.T) {
+	dataDir := t.TempDir()
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"pw", "pw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	addPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, addPrompter, "add", "email"); exit != 0 {
+		t.Fatalf("add failed: %s", errOut)
+	}
+
+	editPrompter := &fakePrompter{
+		master:  []string{"pw"},
+		secrets: []string{"secret-updated"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, editPrompter, "edit", "email"); exit != 0 {
+		t.Fatalf("edit failed: %s", errOut)
+	}
+
+	repo := filepath.Join(dataDir, "qault")
+	if msg := gitHeadMessage(t, repo); msg != "secret updated" {
+		t.Fatalf("unexpected head message: %q", msg)
 	}
 }
 
@@ -498,6 +586,11 @@ func TestChangeMasterPassword(t *testing.T) {
 		t.Fatalf("fetch with new password failed: %s", errOut)
 	} else if out != "secret" {
 		t.Fatalf("unexpected fetch output with new password: %q", out)
+	}
+
+	repo := filepath.Join(dataDir, "qault")
+	if msg := gitHeadMessage(t, repo); msg != "master password changed" {
+		t.Fatalf("unexpected head message after password change: %q", msg)
 	}
 }
 

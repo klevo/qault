@@ -22,6 +22,7 @@ import (
 
 	"qault/internal/auth"
 	ifs "qault/internal/fs"
+	"qault/internal/gitrepo"
 	iotp "qault/internal/otp"
 	"qault/internal/store"
 )
@@ -685,6 +686,10 @@ func (m *model) saveNew(nameInput, secretValue, otpPath string) (tea.Cmd, tea.Cm
 		return nil, nil, err
 	}
 
+	if err := gitrepo.CommitFiles(m.dataDir, "secret added", filename); err != nil {
+		return nil, nil, err
+	}
+
 	reloadCmd, err := m.reloadList()
 	if err != nil {
 		return nil, nil, err
@@ -742,6 +747,10 @@ func (m *model) saveEdit(nameInput, secretValue, otpPath string) (tea.Cmd, tea.C
 		return nil, nil, err
 	}
 	if err := store.WriteFile(current.path, enc); err != nil {
+		return nil, nil, err
+	}
+
+	if err := gitrepo.CommitFiles(m.dataDir, "secret updated", current.path); err != nil {
 		return nil, nil, err
 	}
 

@@ -21,6 +21,7 @@ import (
 	"qault/internal/auth"
 	icrypto "qault/internal/crypto"
 	ifs "qault/internal/fs"
+	"qault/internal/gitrepo"
 	"qault/internal/otp"
 	"qault/internal/store"
 )
@@ -133,6 +134,10 @@ func (c *CLI) handleInit() error {
 		return fatalError(err)
 	}
 
+	if err := gitrepo.Init(dir); err != nil {
+		return fatalError(err)
+	}
+
 	hasLock, err := ifs.HasLock(dir)
 	if err != nil {
 		return fatalError(err)
@@ -165,6 +170,10 @@ func (c *CLI) handleInit() error {
 	}
 
 	if err := auth.WriteLockFile(dir, lockValue, salt, rootKey); err != nil {
+		return fatalError(err)
+	}
+
+	if err := gitrepo.CommitFiles(dir, "master password changed", ifs.LockPath(dir)); err != nil {
 		return fatalError(err)
 	}
 
@@ -239,12 +248,18 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return fatalError(err)
 	}
 
-	if err := reencryptSecrets(dir, oldRootKey, newRootKey); err != nil {
+	updatedPaths, err := reencryptSecrets(dir, oldRootKey, newRootKey)
+	if err != nil {
 		return err
 	}
 
 	if err := auth.WriteLockFile(dir, lockValue, newSalt, newRootKey); err != nil {
 		return err
+	}
+
+	commitPaths := append(updatedPaths, ifs.LockPath(dir))
+	if err := gitrepo.CommitFiles(dir, "master password changed", commitPaths...); err != nil {
+		return fatalError(err)
 	}
 
 	fmt.Fprintln(c.Out, "Master password updated")
@@ -330,37 +345,44 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 		return fatalError(err)
 	}
 
-	return nil
-}
-
-func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) error {
-	files, err := ifs.ListSecretFiles(dir)
-	if err != nil {
+	if err := gitrepo.CommitFiles(dir, "secret updated", path); err != nil {
 		return fatalError(err)
 	}
 
+	return nil
+}
+
+func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, error) {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return nil, fatalError(err)
+	}
+
+	var updated []string
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
-			return fatalError(err)
+			return nil, fatalError(err)
 		}
 
 		secret, err := store.DecryptSecret(oldRootKey, data)
 		if err != nil {
-			return userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+			return nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
 		encrypted, err := store.EncryptSecret(newRootKey, secret)
 		if err != nil {
-			return fatalError(err)
+			return nil, fatalError(err)
 		}
 
 		if err := store.WriteFile(path, encrypted); err != nil {
-			return fatalError(err)
+			return nil, fatalError(err)
 		}
+
+		updated = append(updated, path)
 	}
 
-	return nil
+	return updated, nil
 }
 
 func (c *CLI) handleEdit(names []string, useEditor bool) error {
@@ -400,6 +422,10 @@ func (c *CLI) handleEdit(names []string, useEditor bool) error {
 	}
 
 	if err := store.WriteFile(path, encrypted); err != nil {
+		return fatalError(err)
+	}
+
+	if err := gitrepo.CommitFiles(dir, "secret updated", path); err != nil {
 		return fatalError(err)
 	}
 
@@ -540,6 +566,10 @@ func (c *CLI) handleAddSecret(names []string, useEditor bool) error {
 		return fatalError(err)
 	}
 
+	if err := gitrepo.CommitFiles(dir, "secret added", filepath.Join(dir, id.String())); err != nil {
+		return fatalError(err)
+	}
+
 	fmt.Fprintf(c.Out, "Secret '%s' added\n", formatNames(names))
 	return nil
 }
@@ -585,6 +615,10 @@ func (c *CLI) handleAddOTP(names []string, qrPath string) error {
 	}
 
 	if err := store.WriteFile(pathForSecret, encrypted); err != nil {
+		return fatalError(err)
+	}
+
+	if err := gitrepo.CommitFiles(dir, "secret updated", pathForSecret); err != nil {
 		return fatalError(err)
 	}
 
