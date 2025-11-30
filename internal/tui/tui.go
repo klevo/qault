@@ -106,6 +106,8 @@ type model struct {
 	addItemSecret   textarea.Model
 	addItemOTP      textinput.Model
 	addItemError    string
+	statusMessage   string
+	statusIsError   bool
 	formMode        formMode
 	editIndex       int
 	formKeys        *itemFormKeyMap
@@ -137,6 +139,11 @@ const (
 	addItemFocusSecret = "secret"
 	addItemFocusOTP    = "otp"
 )
+
+type statusMessageMsg struct {
+	text    string
+	isError bool
+}
 
 func newModel() model {
 	var (
@@ -200,6 +207,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case statusMessageMsg:
+		m.statusMessage = msg.text
+		m.statusIsError = msg.isError
+		return m, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		h, v := appStyle.GetFrameSize()
 		availableHeight := msg.Height - v - m.headerHeight() - m.confirmationHeight()
@@ -380,24 +391,24 @@ func (m model) ListUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 			case "enter":
 				p := m.pendingDelete
 				if err := m.deleteSecret(p.item.path); err != nil {
-					statusCmd := m.list.NewStatusMessage(errorStyle.Render(err.Error()))
+					statusCmd := newStatusMessage(err.Error(), true)
 					m.pendingDelete = nil
 					return m, append(cmds, statusCmd)
 				}
 
 				reloadCmd, err := m.reloadList()
 				if err != nil {
-					statusCmd := m.list.NewStatusMessage(errorStyle.Render(err.Error()))
+					statusCmd := newStatusMessage(err.Error(), true)
 					m.pendingDelete = nil
 					return m, append(cmds, statusCmd)
 				}
 
 				m.pendingDelete = nil
-				statusCmd := m.list.NewStatusMessage(statusMessageStyle("Deleted " + p.item.Title()))
+				statusCmd := newStatusMessage("Deleted "+p.item.Title(), false)
 				return m, append(cmds, statusCmd, reloadCmd)
 			case "esc":
 				m.pendingDelete = nil
-				statusCmd := m.list.NewStatusMessage(statusMessageStyle("Canceled deletion"))
+				statusCmd := newStatusMessage("Canceled deletion", false)
 				return m, append(cmds, statusCmd)
 			}
 		}
@@ -451,15 +462,17 @@ func (m model) View() string {
 		body = m.ItemFormView()
 	default:
 		body = m.list.View()
-		confirmMsg := ""
+		message := confirmationMessageStyle.Render(" ")
 		if m.pendingDelete != nil {
-			confirmMsg = fmt.Sprintf("Delete '%s'? enter to confirm, esc to cancel", m.pendingDelete.item.Title())
+			message = confirmationMessageStyle.Render(fmt.Sprintf("Delete '%s'? enter to confirm, esc to cancel", m.pendingDelete.item.Title()))
+		} else if m.statusMessage != "" {
+			if m.statusIsError {
+				message = errorStyle.Render(m.statusMessage)
+			} else {
+				message = statusMessageStyle(m.statusMessage)
+			}
 		}
-		if confirmMsg == "" {
-			confirmMsg = " "
-		}
-		confirm := confirmationMessageStyle.Render(confirmMsg)
-		body = lipgloss.JoinVertical(lipgloss.Left, body, confirm)
+		body = lipgloss.JoinVertical(lipgloss.Left, body, message)
 	}
 
 	return appStyle.Render(lipgloss.JoinVertical(lipgloss.Left, header, body))
@@ -654,7 +667,7 @@ func (m *model) saveNew(nameInput, secretValue, otpPath string) (tea.Cmd, tea.Cm
 	if err != nil {
 		return nil, nil, err
 	}
-	status := m.list.NewStatusMessage(statusMessageStyle("Added " + strings.Join(names, " / ")))
+	status := newStatusMessage("Added "+strings.Join(names, " / "), false)
 	return status, reloadCmd, nil
 }
 
@@ -715,7 +728,7 @@ func (m *model) saveEdit(nameInput, secretValue, otpPath string) (tea.Cmd, tea.C
 		return nil, nil, err
 	}
 
-	status := m.list.NewStatusMessage(statusMessageStyle("Updated " + strings.Join(names, " / ")))
+	status := newStatusMessage("Updated "+strings.Join(names, " / "), false)
 	return status, reloadCmd, nil
 }
 
@@ -730,6 +743,12 @@ func parseOTPConfig(path string) (*iotp.Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func newStatusMessage(text string, isError bool) tea.Cmd {
+	return func() tea.Msg {
+		return statusMessageMsg{text: text, isError: isError}
+	}
 }
 
 func (m *model) deleteSecret(path string) error {

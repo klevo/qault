@@ -90,34 +90,34 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 
 			case key.Matches(msg, keys.copy):
 				if err := clipboard.WriteAll(secret); err != nil {
-					return m.NewStatusMessage(errorStyle.Render("Failed to copy"))
+					return newStatusMessage("Failed to copy", true)
 				}
-				return m.NewStatusMessage(statusMessageStyle("Copied " + title))
+				return newStatusMessage("Copied "+title, false)
 
 			case key.Matches(msg, keys.copyUser):
 				if username == "" {
-					return m.NewStatusMessage(errorStyle.Render("Username not available"))
+					return newStatusMessage("Username not available", true)
 				}
 				if err := clipboard.WriteAll(username); err != nil {
-					return m.NewStatusMessage(errorStyle.Render("Failed to copy username"))
+					return newStatusMessage("Failed to copy username", true)
 				}
-				return m.NewStatusMessage(statusMessageStyle("Copied username " + title))
+				return newStatusMessage("Copied username "+title, false)
 
 			case key.Matches(msg, keys.copyOTP):
 				if selected.otpConfig == nil {
-					return m.NewStatusMessage(errorStyle.Render("OTP not configured"))
+					return newStatusMessage("OTP not configured", true)
 				}
 
 				code, err := iotp.GenerateCode(*selected.otpConfig, time.Now().UTC())
 				if err != nil {
-					return m.NewStatusMessage(errorStyle.Render("Failed to generate OTP"))
+					return newStatusMessage("Failed to generate OTP", true)
 				}
 
 				if err := clipboard.WriteAll(code); err != nil {
-					return m.NewStatusMessage(errorStyle.Render("Failed to copy OTP"))
+					return newStatusMessage("Failed to copy OTP", true)
 				}
 
-				return m.NewStatusMessage(statusMessageStyle("Copied OTP " + title))
+				return newStatusMessage("Copied OTP "+title, false)
 
 			case key.Matches(msg, keys.remove):
 				index := m.Index()
