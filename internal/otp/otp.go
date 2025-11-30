@@ -52,6 +52,11 @@ func DecodeImage(r io.Reader) (string, error) {
 func ConfigFromImagePath(path string) (Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
+		if unescaped, changed := unescapePath(path); changed {
+			file, err = os.Open(unescaped)
+		}
+	}
+	if err != nil {
 		return Config{}, fmt.Errorf("open otp image: %w", err)
 	}
 	defer file.Close()
@@ -239,4 +244,29 @@ func toAlgorithm(name string) (otp.Algorithm, error) {
 	default:
 		return 0, fmt.Errorf("algorithm: unsupported value %q", name)
 	}
+}
+
+func unescapePath(path string) (string, bool) {
+	var b strings.Builder
+	changed := false
+
+	for i := 0; i < len(path); i++ {
+		if path[i] == '\\' {
+			if i+1 >= len(path) {
+				b.WriteByte(path[i])
+				break
+			}
+			changed = true
+			i++
+			b.WriteByte(path[i])
+			continue
+		}
+		b.WriteByte(path[i])
+	}
+
+	if !changed {
+		return path, false
+	}
+
+	return b.String(), true
 }

@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +90,39 @@ func TestConfigFromImagePath(t *testing.T) {
 	cfg, err := ConfigFromImagePath(path)
 	if err != nil {
 		t.Fatalf("ConfigFromImagePath: %v", err)
+	}
+	if cfg.AccountName != "alice@example.com" || cfg.Issuer != "Example" {
+		t.Fatalf("unexpected config: %+v", cfg)
+	}
+}
+
+func TestConfigFromImagePathWithEscapes(t *testing.T) {
+	payload := "otpauth://totp/Example:alice@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Example&algorithm=SHA1&digits=6&period=30"
+	writer := qrcode.NewQRCodeWriter()
+	matrix, err := writer.Encode(payload, gozxing.BarcodeFormat_QR_CODE, 200, 200, nil)
+	if err != nil {
+		t.Fatalf("encode qr: %v", err)
+	}
+
+	dir := t.TempDir()
+	filename := "I65VU7K5ZQL7WB4E (1).png"
+	path := filepath.Join(dir, filename)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	img := bitMatrixToImage(matrix)
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close file: %v", err)
+	}
+
+	escapedPath := strings.NewReplacer(`\`, `\\`, " ", `\ `, "(", `\(`, ")", `\)`).Replace(path)
+	cfg, err := ConfigFromImagePath(escapedPath)
+	if err != nil {
+		t.Fatalf("ConfigFromImagePath with escapes: %v", err)
 	}
 	if cfg.AccountName != "alice@example.com" || cfg.Issuer != "Example" {
 		t.Fatalf("unexpected config: %+v", cfg)
