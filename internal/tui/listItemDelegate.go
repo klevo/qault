@@ -8,12 +8,15 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+
+	iotp "qault/internal/otp"
 )
 
 type item struct {
 	name      string
 	secret    string
 	otp       bool
+	otpConfig *iotp.Config
 	updatedAt time.Time
 	createdAt time.Time
 	path      string
@@ -62,6 +65,7 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 			title = i.Title()
 			secret = i.secret
 			selected = i
+			keys.copyOTP.SetEnabled(selected.otpConfig != nil)
 		} else {
 			return nil
 		}
@@ -84,6 +88,22 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 				}
 				return m.NewStatusMessage(statusMessageStyle("Copied " + title))
 
+			case key.Matches(msg, keys.copyOTP):
+				if selected.otpConfig == nil {
+					return m.NewStatusMessage(errorStyle.Render("OTP not configured"))
+				}
+
+				code, err := iotp.GenerateCode(*selected.otpConfig, time.Now().UTC())
+				if err != nil {
+					return m.NewStatusMessage(errorStyle.Render("Failed to generate OTP"))
+				}
+
+				if err := clipboard.WriteAll(code); err != nil {
+					return m.NewStatusMessage(errorStyle.Render("Failed to copy OTP"))
+				}
+
+				return m.NewStatusMessage(statusMessageStyle("Copied OTP " + title))
+
 			case key.Matches(msg, keys.remove):
 				index := m.Index()
 				return func() tea.Msg {
@@ -98,7 +118,7 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 		return nil
 	}
 
-	help := []key.Binding{keys.choose, keys.copy, keys.remove}
+	help := []key.Binding{keys.choose, keys.copy, keys.copyOTP, keys.remove}
 
 	d.ShortHelpFunc = func() []key.Binding {
 		return help
@@ -112,9 +132,10 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 }
 
 type itemDelegateKeyMap struct {
-	choose key.Binding
-	copy   key.Binding
-	remove key.Binding
+	choose  key.Binding
+	copy    key.Binding
+	copyOTP key.Binding
+	remove  key.Binding
 }
 
 // Additional short help entries. This satisfies the help.KeyMap interface and
@@ -123,6 +144,7 @@ func (d itemDelegateKeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		d.choose,
 		d.copy,
+		d.copyOTP,
 		d.remove,
 	}
 }
@@ -134,12 +156,19 @@ func (d itemDelegateKeyMap) FullHelp() [][]key.Binding {
 		{
 			d.choose,
 			d.copy,
+			d.copyOTP,
 			d.remove,
 		},
 	}
 }
 
 func newItemDelegateKeyMap() *itemDelegateKeyMap {
+	copyOTP := key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "copy OTP"),
+	)
+	copyOTP.SetEnabled(false)
+
 	return &itemDelegateKeyMap{
 		choose: key.NewBinding(
 			key.WithKeys("enter"),
@@ -149,6 +178,7 @@ func newItemDelegateKeyMap() *itemDelegateKeyMap {
 			key.WithKeys("y"),
 			key.WithHelp("y", "copy secret"),
 		),
+		copyOTP: copyOTP,
 		remove: key.NewBinding(
 			key.WithKeys("x"),
 			key.WithHelp("x", "delete"),

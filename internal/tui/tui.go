@@ -526,6 +526,7 @@ func toListItems(secrets []auth.SecretRecord) []list.Item {
 			name:      strings.Join(record.Secret.Name, "\n"),
 			secret:    record.Secret.Secret,
 			otp:       record.Secret.OTP != nil,
+			otpConfig: record.Secret.OTP,
 			updatedAt: record.Secret.UpdatedAt,
 			createdAt: record.Secret.CreatedAt,
 			path:      record.Path,
