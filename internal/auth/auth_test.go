@@ -86,6 +86,17 @@ func TestLoadSecrets(t *testing.T) {
 	if secrets[0].Secret != secret.Secret || secrets[0].Name[0] != "personal" {
 		t.Fatalf("unexpected secret contents: %+v", secrets[0])
 	}
+
+	records, err := LoadSecretRecords(dir, rootKey)
+	if err != nil {
+		t.Fatalf("load secret records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].Path != path {
+		t.Fatalf("unexpected record path: %s", records[0].Path)
+	}
 }
 
 func deriveRootKey(t *testing.T, password string) ([]byte, []byte) {

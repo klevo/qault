@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 
 	"qault/internal/auth"
 	ifs "qault/internal/fs"
@@ -113,6 +117,7 @@ type model struct {
 	keys            *listKeyMap
 	delegateKeys    *itemDelegateKeyMap
 	dataDir         string
+	rootKey         []byte
 }
 
 type screenState string
@@ -228,13 +233,14 @@ func (m model) LockUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 		if msg.Type == tea.KeyEnter {
 			m.masterPassInput.Err = nil
 
-			dir, items, err := unlockVault(m.masterPassInput.Value())
+			dir, rootKey, items, err := unlockVault(m.masterPassInput.Value())
 			if err != nil {
 				m.masterPassInput.Err = err
 				return m, nil
 			}
 
 			m.dataDir = dir
+			m.rootKey = rootKey
 			m.screen = screenList
 			m.delegateKeys.remove.SetEnabled(len(items) > 0)
 			cmd := m.list.SetItems(items)
@@ -278,38 +284,20 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			name := strings.TrimSpace(m.addItemName.Value())
 			secret := strings.TrimSpace(m.addItemSecret.Value())
 
-			if name == "" {
-				m.addItemError = "Name cannot be empty"
-				return m, cmds
-			}
-			if secret == "" {
-				m.addItemError = "Secret cannot be empty"
-				return m, cmds
-			}
-
 			var (
 				statusCmd tea.Cmd
-				actionCmd tea.Cmd
+				reloadCmd tea.Cmd
+				err       error
 			)
 
 			if m.formMode == formModeEdit {
-				edited := item{
-					name:      m.addItemName.Value(),
-					secret:    m.addItemSecret.Value(),
-					otp:       m.currentEditingItem().otp,
-					updatedAt: time.Now(),
-				}
-				actionCmd = m.list.SetItem(m.editIndex, edited)
-				statusCmd = m.list.NewStatusMessage(statusMessageStyle("Updated " + edited.Title()))
+				statusCmd, reloadCmd, err = m.saveEdit(name, secret)
 			} else {
-				newItem := item{
-					name:      m.addItemName.Value(),
-					secret:    m.addItemSecret.Value(),
-					otp:       false,
-					updatedAt: time.Now(),
-				}
-				actionCmd = m.list.InsertItem(0, newItem)
-				statusCmd = m.list.NewStatusMessage(statusMessageStyle("Added " + newItem.Title()))
+				statusCmd, reloadCmd, err = m.saveNew(name, secret)
+			}
+			if err != nil {
+				m.addItemError = err.Error()
+				return m, cmds
 			}
 
 			m.screen = screenList
@@ -318,7 +306,7 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.addItemName.Blur()
 			m.addItemSecret.Blur()
 			m.addItemError = ""
-			return m, append(cmds, actionCmd, statusCmd)
+			return m, append(cmds, statusCmd, reloadCmd)
 		case key.Matches(msg, m.formKeys.cancel):
 			m.screen = screenList
 			m.formMode = formModeAdd
@@ -370,13 +358,22 @@ func (m model) ListUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				p := m.pendingDelete
-				m.list.RemoveItem(p.index)
-				if len(m.list.Items()) == 0 {
-					m.delegateKeys.remove.SetEnabled(false)
+				if err := m.deleteSecret(p.item.path); err != nil {
+					statusCmd := m.list.NewStatusMessage(errorStyle.Render(err.Error()))
+					m.pendingDelete = nil
+					return m, append(cmds, statusCmd)
 				}
+
+				reloadCmd, err := m.reloadList()
+				if err != nil {
+					statusCmd := m.list.NewStatusMessage(errorStyle.Render(err.Error()))
+					m.pendingDelete = nil
+					return m, append(cmds, statusCmd)
+				}
+
 				m.pendingDelete = nil
 				statusCmd := m.list.NewStatusMessage(statusMessageStyle("Deleted " + p.item.Title()))
-				return m, append(cmds, statusCmd)
+				return m, append(cmds, statusCmd, reloadCmd)
 			case "esc":
 				m.pendingDelete = nil
 				statusCmd := m.list.NewStatusMessage(statusMessageStyle("Canceled deletion"))
@@ -499,37 +496,38 @@ func Run() error {
 	return err
 }
 
-func unlockVault(password string) (string, []list.Item, error) {
+func unlockVault(password string) (string, []byte, []list.Item, error) {
 	dir, err := ifs.EnsureDataDir()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	if err := auth.EnsureInitialized(dir); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	rootKey, err := auth.UnlockRootKey(dir, password)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	secrets, err := auth.LoadSecrets(dir, rootKey)
+	records, err := auth.LoadSecretRecords(dir, rootKey)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return dir, toListItems(secrets), nil
+	return dir, rootKey, toListItems(records), nil
 }
 
-func toListItems(secrets []store.Secret) []list.Item {
+func toListItems(secrets []auth.SecretRecord) []list.Item {
 	items := make([]item, 0, len(secrets))
-	for _, secret := range secrets {
+	for _, record := range secrets {
 		items = append(items, item{
-			name:      strings.Join(secret.Name, "\n"),
-			secret:    secret.Secret,
-			otp:       secret.OTP != nil,
-			updatedAt: secret.UpdatedAt,
+			name:      strings.Join(record.Secret.Name, "\n"),
+			secret:    record.Secret.Secret,
+			otp:       record.Secret.OTP != nil,
+			updatedAt: record.Secret.UpdatedAt,
+			path:      record.Path,
 		})
 	}
 
@@ -542,4 +540,155 @@ func toListItems(secrets []store.Secret) []list.Item {
 		listItems[i] = items[i]
 	}
 	return listItems
+}
+
+func parseNameInput(name string) ([]string, error) {
+	parts := strings.Split(name, "\n")
+	var names []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		names = append(names, trimmed)
+	}
+	if len(names) == 0 {
+		return nil, errors.New("Name cannot be empty")
+	}
+	return names, nil
+}
+
+func normalizeNames(names []string) string {
+	normalized := make([]string, len(names))
+	for i, name := range names {
+		normalized[i] = strings.ToLower(strings.TrimSpace(name))
+	}
+	return strings.Join(normalized, "\x00")
+}
+
+func (m *model) reloadList() (tea.Cmd, error) {
+	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	if err != nil {
+		return nil, err
+	}
+	items := toListItems(records)
+	m.delegateKeys.remove.SetEnabled(len(items) > 0)
+	return m.list.SetItems(items), nil
+}
+
+func (m *model) saveNew(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error) {
+	names, err := parseNameInput(nameInput)
+	if err != nil {
+		return nil, nil, err
+	}
+	if secretValue == "" {
+		return nil, nil, errors.New("Secret cannot be empty")
+	}
+
+	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, record := range records {
+		if normalizeNames(record.Secret.Name) == normalizeNames(names) {
+			return nil, nil, errors.New("Name already exists")
+		}
+	}
+
+	now := time.Now().UTC()
+	secret := store.Secret{
+		Name:      names,
+		Secret:    secretValue,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, nil, err
+	}
+	filename := filepath.Join(m.dataDir, id.String())
+
+	enc, err := store.EncryptSecret(m.rootKey, secret)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := store.WriteFile(filename, enc); err != nil {
+		return nil, nil, err
+	}
+
+	reloadCmd, err := m.reloadList()
+	if err != nil {
+		return nil, nil, err
+	}
+	status := m.list.NewStatusMessage(statusMessageStyle("Added " + strings.Join(names, " / ")))
+	return status, reloadCmd, nil
+}
+
+func (m *model) saveEdit(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error) {
+	names, err := parseNameInput(nameInput)
+	if err != nil {
+		return nil, nil, err
+	}
+	if secretValue == "" {
+		return nil, nil, errors.New("Secret cannot be empty")
+	}
+
+	current := m.currentEditingItem()
+	if current.path == "" {
+		return nil, nil, errors.New("Unable to locate selected secret")
+	}
+
+	records, err := auth.LoadSecretRecords(m.dataDir, m.rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, record := range records {
+		if record.Path == current.path {
+			continue
+		}
+		if normalizeNames(record.Secret.Name) == normalizeNames(names) {
+			return nil, nil, errors.New("Name already exists")
+		}
+	}
+
+	secret, err := readSecret(current.path, m.rootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	secret.Name = names
+	secret.Secret = secretValue
+	secret.UpdatedAt = time.Now().UTC()
+
+	enc, err := store.EncryptSecret(m.rootKey, secret)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := store.WriteFile(current.path, enc); err != nil {
+		return nil, nil, err
+	}
+
+	reloadCmd, err := m.reloadList()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	status := m.list.NewStatusMessage(statusMessageStyle("Updated " + strings.Join(names, " / ")))
+	return status, reloadCmd, nil
+}
+
+func (m *model) deleteSecret(path string) error {
+	if path == "" {
+		return errors.New("No secret selected")
+	}
+	return os.Remove(path)
+}
+
+func readSecret(path string, rootKey []byte) (store.Secret, error) {
+	data, err := store.ReadFile(path)
+	if err != nil {
+		return store.Secret{}, err
+	}
+	return store.DecryptSecret(rootKey, data)
 }

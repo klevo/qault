@@ -15,6 +15,7 @@ type item struct {
 	secret    string
 	otp       bool
 	updatedAt time.Time
+	path      string
 }
 
 type deleteItemRequestedMsg struct {

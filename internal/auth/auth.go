@@ -21,6 +21,11 @@ type LockFile struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
+type SecretRecord struct {
+	Secret store.Secret
+	Path   string
+}
+
 func EnsureInitialized(dir string) error {
 	hasLock, err := ifs.HasLock(dir)
 	if err != nil {
@@ -121,6 +126,30 @@ func LoadSecrets(dir string, rootKey []byte) ([]store.Secret, error) {
 		}
 
 		secrets = append(secrets, secret)
+	}
+
+	return secrets, nil
+}
+
+func LoadSecretRecords(dir string, rootKey []byte) ([]SecretRecord, error) {
+	files, err := ifs.ListSecretFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var secrets []SecretRecord
+	for _, path := range files {
+		data, err := store.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+
+		secret, err := store.DecryptSecret(rootKey, data)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to decrypt secret %s", filepath.Base(path))
+		}
+
+		secrets = append(secrets, SecretRecord{Secret: secret, Path: path})
 	}
 
 	return secrets, nil
