@@ -48,17 +48,12 @@ var (
 const PASSWORD = "dev"
 
 type listKeyMap struct {
-	toggleSpinner  key.Binding
 	toggleHelpMenu key.Binding
 	insertItem     key.Binding
 }
 
 func newListKeyMap() *listKeyMap {
 	return &listKeyMap{
-		toggleSpinner: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "toggle spinner"),
-		),
 		toggleHelpMenu: key.NewBinding(
 			key.WithKeys("H"),
 			key.WithHelp("H", "toggle help"),
@@ -163,7 +158,6 @@ func newModel() model {
 	secretsList.SetShowStatusBar(false)
 	secretsList.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			listKeys.toggleSpinner,
 			listKeys.toggleHelpMenu,
 			listKeys.insertItem,
 		}
@@ -387,10 +381,6 @@ func (m model) ListUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 		}
 
 		switch {
-		case key.Matches(msg, m.keys.toggleSpinner):
-			cmd := m.list.ToggleSpinner()
-			return m, append(cmds, cmd)
-
 		case key.Matches(msg, m.keys.toggleHelpMenu):
 			m.list.SetShowHelp(!m.list.ShowHelp())
 			return m, cmds
