@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
 	"testing"
 	"time"
 
@@ -60,6 +61,43 @@ func TestDecodeImage(t *testing.T) {
 
 	if result != payload {
 		t.Fatalf("decoded payload mismatch: %q", result)
+	}
+}
+
+func TestConfigFromImagePath(t *testing.T) {
+	payload := "otpauth://totp/Example:alice@example.com?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Example&algorithm=SHA1&digits=6&period=30"
+	writer := qrcode.NewQRCodeWriter()
+	matrix, err := writer.Encode(payload, gozxing.BarcodeFormat_QR_CODE, 200, 200, nil)
+	if err != nil {
+		t.Fatalf("encode qr: %v", err)
+	}
+
+	path := t.TempDir() + "/otp.png"
+	img := bitMatrixToImage(matrix)
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	if err := png.Encode(file, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close file: %v", err)
+	}
+
+	cfg, err := ConfigFromImagePath(path)
+	if err != nil {
+		t.Fatalf("ConfigFromImagePath: %v", err)
+	}
+	if cfg.AccountName != "alice@example.com" || cfg.Issuer != "Example" {
+		t.Fatalf("unexpected config: %+v", cfg)
+	}
+}
+
+func TestConfigFromImageInvalidData(t *testing.T) {
+	_, err := ConfigFromImage(bytes.NewBufferString("not-an-image"))
+	if err == nil {
+		t.Fatal("expected error for invalid image data")
 	}
 }
 

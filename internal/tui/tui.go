@@ -20,6 +20,7 @@ import (
 
 	"qault/internal/auth"
 	ifs "qault/internal/fs"
+	iotp "qault/internal/otp"
 	"qault/internal/store"
 )
 
@@ -103,6 +104,7 @@ type model struct {
 	addItemFocus    string
 	addItemName     textarea.Model
 	addItemSecret   textarea.Model
+	addItemOTP      textinput.Model
 	addItemError    string
 	formMode        formMode
 	editIndex       int
@@ -130,6 +132,12 @@ const (
 	formModeEdit formMode = "edit"
 )
 
+const (
+	addItemFocusName   = "name"
+	addItemFocusSecret = "secret"
+	addItemFocusOTP    = "otp"
+)
+
 func newModel() model {
 	var (
 		delegateKeys    = newItemDelegateKeyMap()
@@ -138,6 +146,7 @@ func newModel() model {
 		masterPassInput = textinput.New()
 		addItemName     = textarea.New()
 		addItemSecret   = textarea.New()
+		addItemOTP      = textinput.New()
 		formHelp        = help.New()
 	)
 
@@ -150,6 +159,7 @@ func newModel() model {
 	// Setup add item inputs
 	addItemName.SetHeight(3)
 	addItemSecret.SetHeight(5)
+	addItemOTP.Placeholder = "/path/to/otp.png"
 
 	// Setup list
 	delegate := newItemDelegate(delegateKeys)
@@ -172,6 +182,7 @@ func newModel() model {
 		masterPassInput: masterPassInput,
 		addItemName:     addItemName,
 		addItemSecret:   addItemSecret,
+		addItemOTP:      addItemOTP,
 		formMode:        formModeAdd,
 		editIndex:       -1,
 		formKeys:        formKeys,
@@ -200,6 +211,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if availableWidth > 0 {
 			m.addItemName.SetWidth(availableWidth)
 			m.addItemSecret.SetWidth(availableWidth)
+			m.addItemOTP.Width = availableWidth
 		}
 
 	case tea.KeyMsg:
@@ -253,16 +265,19 @@ func (m model) startItemForm(mode formMode, existing item, index int) (tea.Model
 	m.formMode = mode
 	m.editIndex = index
 	m.pendingDelete = nil
-	m.addItemFocus = "name"
+	m.addItemFocus = addItemFocusName
 	m.addItemError = ""
 	m.addItemSecret.Blur()
+	m.addItemOTP.Blur()
 
 	if mode == formModeEdit {
 		m.addItemName.SetValue(existing.name)
 		m.addItemSecret.SetValue(existing.secret)
+		m.addItemOTP.SetValue("")
 	} else {
 		m.addItemName.Reset()
 		m.addItemSecret.Reset()
+		m.addItemOTP.Reset()
 	}
 
 	cmd := m.addItemName.Focus()
@@ -277,6 +292,7 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.delegateKeys.remove.SetEnabled(true)
 			name := strings.TrimSpace(m.addItemName.Value())
 			secret := strings.TrimSpace(m.addItemSecret.Value())
+			otpPath := strings.TrimSpace(m.addItemOTP.Value())
 
 			var (
 				statusCmd tea.Cmd
@@ -285,9 +301,9 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			)
 
 			if m.formMode == formModeEdit {
-				statusCmd, reloadCmd, err = m.saveEdit(name, secret)
+				statusCmd, reloadCmd, err = m.saveEdit(name, secret, otpPath)
 			} else {
-				statusCmd, reloadCmd, err = m.saveNew(name, secret)
+				statusCmd, reloadCmd, err = m.saveNew(name, secret, otpPath)
 			}
 			if err != nil {
 				m.addItemError = err.Error()
@@ -299,6 +315,7 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.editIndex = -1
 			m.addItemName.Blur()
 			m.addItemSecret.Blur()
+			m.addItemOTP.Blur()
 			m.addItemError = ""
 			return m, append(cmds, statusCmd, reloadCmd)
 		case key.Matches(msg, m.formKeys.cancel):
@@ -307,26 +324,36 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.editIndex = -1
 			m.addItemName.Blur()
 			m.addItemSecret.Blur()
+			m.addItemOTP.Blur()
 			m.addItemError = ""
 			return m, cmds
 		case key.Matches(msg, m.formKeys.nextField):
-			if m.addItemFocus == "name" {
-				m.addItemFocus = "secret"
+			switch m.addItemFocus {
+			case addItemFocusName:
+				m.addItemFocus = addItemFocusSecret
 				m.addItemName.Blur()
 				cmd := m.addItemSecret.Focus()
 				return m, append(cmds, cmd)
+			case addItemFocusSecret:
+				m.addItemFocus = addItemFocusOTP
+				m.addItemSecret.Blur()
+				cmd := m.addItemOTP.Focus()
+				return m, append(cmds, cmd)
 			}
-			m.addItemFocus = "name"
-			m.addItemSecret.Blur()
+			m.addItemFocus = addItemFocusName
+			m.addItemOTP.Blur()
 			cmd := m.addItemName.Focus()
 			return m, append(cmds, cmd)
 		}
 	}
 
 	var cmd tea.Cmd
-	if m.addItemFocus == "secret" {
+	switch m.addItemFocus {
+	case addItemFocusSecret:
 		m.addItemSecret, cmd = m.addItemSecret.Update(msg)
-	} else {
+	case addItemFocusOTP:
+		m.addItemOTP, cmd = m.addItemOTP.Update(msg)
+	default:
 		m.addItemName, cmd = m.addItemName.Update(msg)
 	}
 
@@ -445,6 +472,9 @@ func (m model) ItemFormView() string {
 		"",
 		"Secret",
 		m.addItemSecret.View(),
+		"",
+		"OTP setup QR image path",
+		m.addItemOTP.View(),
 	}
 	if m.addItemError != "" {
 		parts = append(parts, "", errorStyle.Render(m.addItemError))
@@ -573,7 +603,7 @@ func (m *model) reloadList() (tea.Cmd, error) {
 	return m.list.SetItems(items), nil
 }
 
-func (m *model) saveNew(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error) {
+func (m *model) saveNew(nameInput, secretValue, otpPath string) (tea.Cmd, tea.Cmd, error) {
 	names, err := parseNameInput(nameInput)
 	if err != nil {
 		return nil, nil, err
@@ -592,10 +622,16 @@ func (m *model) saveNew(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error)
 		}
 	}
 
+	otpConfig, err := parseOTPConfig(otpPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	now := time.Now().UTC()
 	secret := store.Secret{
 		Name:      names,
 		Secret:    secretValue,
+		OTP:       otpConfig,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -622,7 +658,7 @@ func (m *model) saveNew(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error)
 	return status, reloadCmd, nil
 }
 
-func (m *model) saveEdit(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error) {
+func (m *model) saveEdit(nameInput, secretValue, otpPath string) (tea.Cmd, tea.Cmd, error) {
 	names, err := parseNameInput(nameInput)
 	if err != nil {
 		return nil, nil, err
@@ -654,9 +690,17 @@ func (m *model) saveEdit(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error
 		return nil, nil, err
 	}
 
+	otpConfig, err := parseOTPConfig(otpPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	secret.Name = names
 	secret.Secret = secretValue
 	secret.UpdatedAt = time.Now().UTC()
+	if otpConfig != nil {
+		secret.OTP = otpConfig
+	}
 
 	enc, err := store.EncryptSecret(m.rootKey, secret)
 	if err != nil {
@@ -673,6 +717,19 @@ func (m *model) saveEdit(nameInput, secretValue string) (tea.Cmd, tea.Cmd, error
 
 	status := m.list.NewStatusMessage(statusMessageStyle("Updated " + strings.Join(names, " / ")))
 	return status, reloadCmd, nil
+}
+
+func parseOTPConfig(path string) (*iotp.Config, error) {
+	if path == "" {
+		return nil, nil
+	}
+
+	cfg, err := iotp.ConfigFromImagePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("otp: %w", err)
+	}
+
+	return &cfg, nil
 }
 
 func (m *model) deleteSecret(path string) error {

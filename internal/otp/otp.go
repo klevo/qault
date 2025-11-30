@@ -9,6 +9,7 @@ import (
 	_ "image/png"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -45,6 +46,26 @@ func DecodeImage(r io.Reader) (string, error) {
 	}
 
 	return result.GetText(), nil
+}
+
+// ConfigFromImagePath opens the QR image at the given path and parses it into a Config.
+func ConfigFromImagePath(path string) (Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("open otp image: %w", err)
+	}
+	defer file.Close()
+
+	return ConfigFromImage(file)
+}
+
+// ConfigFromImage parses a QR image reader into an OTP configuration.
+func ConfigFromImage(r io.Reader) (Config, error) {
+	uri, err := DecodeImage(r)
+	if err != nil {
+		return Config{}, err
+	}
+	return ParseURI(uri)
 }
 
 // ParseURI parses an otpauth URI into an internal configuration.

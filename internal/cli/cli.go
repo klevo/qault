@@ -567,20 +567,13 @@ func (c *CLI) handleAddOTP(names []string, qrPath string) error {
 		return exitError{code: 1, msg: "Secret not found"}
 	}
 
-	file, err := os.Open(qrPath)
+	cfg, err := otp.ConfigFromImagePath(qrPath)
 	if err != nil {
-		return fatalError(err)
-	}
-	defer file.Close()
-
-	uri, err := otp.DecodeImage(file)
-	if err != nil {
-		return userError(fmt.Sprintf("Failed to decode QR: %v", err))
-	}
-
-	cfg, err := otp.ParseURI(uri)
-	if err != nil {
-		return userError(err.Error())
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			return fatalError(err)
+		}
+		return userError(fmt.Sprintf("Failed to read OTP QR: %v", err))
 	}
 
 	secret.OTP = &cfg
