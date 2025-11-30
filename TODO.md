@@ -9,6 +9,7 @@
 - [x] Multi line input / $EDITOR support
 - [x] Implement change-password command
 - [x] Experiment with https://github.com/charmbracelet/bubbletea
-- [ ] Implement ctrl+g on item form, that replaces first line of secret with a strongly generated password
+- [x] Implement ctrl+g on item form, that replaces first line of secret with a strongly generated password
 - [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
+- [ ] TUI auto-lock after some time, with status message showing how much time remaining to lock

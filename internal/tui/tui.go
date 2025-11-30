@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -70,6 +72,7 @@ type itemFormKeyMap struct {
 	save      key.Binding
 	cancel    key.Binding
 	nextField key.Binding
+	generate  key.Binding
 }
 
 func newItemFormKeyMap() *itemFormKeyMap {
@@ -86,15 +89,19 @@ func newItemFormKeyMap() *itemFormKeyMap {
 			key.WithKeys("tab", "shift+tab"),
 			key.WithHelp("tab", "switch field"),
 		),
+		generate: key.NewBinding(
+			key.WithKeys("ctrl+g"),
+			key.WithHelp("ctrl+g", "generate password"),
+		),
 	}
 }
 
 func (k itemFormKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.save, k.cancel, k.nextField}
+	return []key.Binding{k.save, k.cancel, k.nextField, k.generate}
 }
 
 func (k itemFormKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{k.save, k.cancel, k.nextField}}
+	return [][]key.Binding{{k.save, k.cancel, k.nextField, k.generate}}
 }
 
 type model struct {
@@ -339,6 +346,19 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.addItemSecret.Blur()
 			m.addItemOTP.Blur()
 			m.addItemError = ""
+			return m, cmds
+		case key.Matches(msg, m.formKeys.generate):
+			pw, err := generatePassword(10)
+			if err != nil {
+				m.addItemError = err.Error()
+				return m, cmds
+			}
+			lines := strings.Split(m.addItemSecret.Value(), "\n")
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			lines[0] = pw
+			m.addItemSecret.SetValue(strings.Join(lines, "\n"))
 			return m, cmds
 		case key.Matches(msg, m.formKeys.nextField):
 			switch m.addItemFocus {
@@ -751,6 +771,70 @@ func newStatusMessage(text string, isError bool) tea.Cmd {
 	return func() tea.Msg {
 		return statusMessageMsg{text: text, isError: isError}
 	}
+}
+
+func generatePassword(length int) (string, error) {
+	if length < 4 {
+		return "", errors.New("password length too short")
+	}
+
+	charsets := []string{
+		"abcdefghijklmnopqrstuvwxyz",
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"0123456789",
+		"!@#$%^&*()-_=+[]{}:;,.?/",
+	}
+	allChars := strings.Join(charsets, "")
+
+	var password []byte
+	for _, set := range charsets {
+		c, err := randomChar(set)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, c)
+	}
+
+	for len(password) < length {
+		c, err := randomChar(allChars)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, c)
+	}
+
+	if err := shuffle(password); err != nil {
+		return "", err
+	}
+
+	return string(password), nil
+}
+
+func randomChar(from string) (byte, error) {
+	n, err := randInt(len(from))
+	if err != nil {
+		return 0, err
+	}
+	return from[n], nil
+}
+
+func shuffle(b []byte) error {
+	for i := len(b) - 1; i > 0; i-- {
+		n, err := randInt(i + 1)
+		if err != nil {
+			return err
+		}
+		b[i], b[n] = b[n], b[i]
+	}
+	return nil
+}
+
+func randInt(max int) (int, error) {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(nBig.Int64()), nil
 }
 
 func (m *model) deleteSecret(path string) error {
