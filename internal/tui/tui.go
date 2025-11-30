@@ -524,6 +524,7 @@ func toListItems(secrets []auth.SecretRecord) []list.Item {
 	for _, record := range secrets {
 		items = append(items, item{
 			name:      strings.Join(record.Secret.Name, "\n"),
+			names:     record.Secret.Name,
 			secret:    record.Secret.Secret,
 			otp:       record.Secret.OTP != nil,
 			otpConfig: record.Secret.OTP,

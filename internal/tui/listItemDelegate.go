@@ -14,6 +14,7 @@ import (
 
 type item struct {
 	name      string
+	names     []string
 	secret    string
 	otp       bool
 	otpConfig *iotp.Config
@@ -59,6 +60,7 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 			title    string
 			secret   string
 			selected item
+			username string
 		)
 
 		if i, ok := m.SelectedItem().(item); ok {
@@ -66,6 +68,10 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 			secret = i.secret
 			selected = i
 			keys.copyOTP.SetEnabled(selected.otpConfig != nil)
+			keys.copyUser.SetEnabled(len(selected.names) > 0)
+			if len(selected.names) > 0 {
+				username = selected.names[len(selected.names)-1]
+			}
 		} else {
 			return nil
 		}
@@ -87,6 +93,15 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 					return m.NewStatusMessage(errorStyle.Render("Failed to copy"))
 				}
 				return m.NewStatusMessage(statusMessageStyle("Copied " + title))
+
+			case key.Matches(msg, keys.copyUser):
+				if username == "" {
+					return m.NewStatusMessage(errorStyle.Render("Username not available"))
+				}
+				if err := clipboard.WriteAll(username); err != nil {
+					return m.NewStatusMessage(errorStyle.Render("Failed to copy username"))
+				}
+				return m.NewStatusMessage(statusMessageStyle("Copied username " + title))
 
 			case key.Matches(msg, keys.copyOTP):
 				if selected.otpConfig == nil {
@@ -118,7 +133,7 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 		return nil
 	}
 
-	help := []key.Binding{keys.choose, keys.copy, keys.copyOTP, keys.remove}
+	help := []key.Binding{keys.choose, keys.copy, keys.copyUser, keys.copyOTP, keys.remove}
 
 	d.ShortHelpFunc = func() []key.Binding {
 		return help
@@ -132,10 +147,11 @@ func newItemDelegate(keys *itemDelegateKeyMap) list.DefaultDelegate {
 }
 
 type itemDelegateKeyMap struct {
-	choose  key.Binding
-	copy    key.Binding
-	copyOTP key.Binding
-	remove  key.Binding
+	choose   key.Binding
+	copy     key.Binding
+	copyUser key.Binding
+	copyOTP  key.Binding
+	remove   key.Binding
 }
 
 // Additional short help entries. This satisfies the help.KeyMap interface and
@@ -144,6 +160,7 @@ func (d itemDelegateKeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		d.choose,
 		d.copy,
+		d.copyUser,
 		d.copyOTP,
 		d.remove,
 	}
@@ -156,6 +173,7 @@ func (d itemDelegateKeyMap) FullHelp() [][]key.Binding {
 		{
 			d.choose,
 			d.copy,
+			d.copyUser,
 			d.copyOTP,
 			d.remove,
 		},
@@ -177,6 +195,10 @@ func newItemDelegateKeyMap() *itemDelegateKeyMap {
 		copy: key.NewBinding(
 			key.WithKeys("y"),
 			key.WithHelp("y", "copy secret"),
+		),
+		copyUser: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "copy username"),
 		),
 		copyOTP: copyOTP,
 		remove: key.NewBinding(
