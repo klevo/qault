@@ -9,6 +9,6 @@
 - [x] Multi line input / $EDITOR support
 - [x] Implement change-password command
 - [x] Experiment with https://github.com/charmbracelet/bubbletea
-- [ ] Implement -g argument for adding and editing password, that generates a strong password and outputs it
+- [ ] Implement ctrl+g on item form, that replaces first line of secret with a strongly generated password
 - [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Handle secrets named like commands (probably by having dedicated "get/show" command)
