@@ -527,12 +527,13 @@ func toListItems(secrets []auth.SecretRecord) []list.Item {
 			secret:    record.Secret.Secret,
 			otp:       record.Secret.OTP != nil,
 			updatedAt: record.Secret.UpdatedAt,
+			createdAt: record.Secret.CreatedAt,
 			path:      record.Path,
 		})
 	}
 
 	sort.Slice(items, func(i, j int) bool {
-		return strings.ToLower(items[i].name) < strings.ToLower(items[j].name)
+		return items[i].createdAt.After(items[j].createdAt)
 	})
 
 	listItems := make([]list.Item, len(items))
