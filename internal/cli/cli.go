@@ -112,7 +112,7 @@ func (c *CLI) handleError(err error) int {
 
 func (c *CLI) dispatch(args []string) error {
 	if len(args) == 0 {
-		return c.handleList()
+		return userError("command required; try `qault list` or see available subcommands")
 	}
 
 	switch args[0] {
@@ -134,6 +134,8 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleEditArgs(args[1:])
 	case "recent":
 		return c.handleRecent()
+	case "list":
+		return c.handleList()
 	case "change-master-password":
 		return c.handleChangeMasterPassword()
 	default:
@@ -721,7 +723,7 @@ func parseFetchArgs(args []string) ([]string, bool, error) {
 	for _, arg := range args {
 		if arg == "-o" {
 			if wantOTP {
-				return nil, false, userError("usage: qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault NAME... [-o]")
+				return nil, false, userError("usage: qault list | qault init | qault unlock | qault lock | qault add NAME... [-o PATH] | qault rm NAME... | qault mv OLD... --to NEW... | qault recent | qault NAME... [-o]")
 			}
 			wantOTP = true
 			continue

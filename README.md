@@ -29,6 +29,8 @@ While at it, I aim for post-quantum-safe storage/encryption, assuming AES-GCM wi
 
 ## 🛠️ Command Line Interface (CLI)
 
+Running `qault` with no arguments launches the interactive TUI. Provide a subcommand to use the CLI flows below.
+
 ### Vault initialization
 
 ```sh
@@ -96,7 +98,7 @@ Asks for the current master password, then prompts twice for the new one, and re
 ### Listing secrets
 
 ```sh
-qault
+qault list
 ```
 
 1. Ask for the master password and validate by decrypting `.lock`; fail with exit code 1 if it’s wrong.
@@ -108,7 +110,7 @@ qault
 qault recent
 ```
 
-Same output format as `qault` but sorted by `updated_at` descending, and each line is prefixed with the `updated_at` timestamp (faint in terminal).
+Same output format as `qault list` but sorted by `updated_at` descending, and each line is prefixed with the `updated_at` timestamp (faint in terminal).
 
 ### Fetching a secret
 
@@ -147,6 +149,8 @@ qault lock
 ```sh
 go run ./cmd/qault
 ```
+
+Run `go run ./cmd/qault -- list` (or any other subcommand) to exercise the CLI directly instead of starting the TUI.
 
 ### Running tests
 
