@@ -173,6 +173,8 @@ func newModel() model {
 	secretsList := list.New([]list.Item{}, delegate, 0, 0)
 	secretsList.SetShowTitle(false)
 	secretsList.SetShowStatusBar(false)
+	secretsList.KeyMap.PrevPage.SetKeys("left", "h", "pgup", "b")
+	secretsList.KeyMap.NextPage.SetKeys("right", "l", "pgdown", "f")
 	secretsList.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			listKeys.toggleHelpMenu,
