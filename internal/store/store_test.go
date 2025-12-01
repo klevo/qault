@@ -74,8 +74,23 @@ func TestEncryptDecryptSecret(t *testing.T) {
 		t.Fatalf("DecryptSecret error: %v", err)
 	}
 
-	if !reflect.DeepEqual(decrypted, secret) {
-		t.Fatalf("round trip mismatch: %+v != %+v", decrypted, secret)
+	if !reflect.DeepEqual(decrypted.Name, secret.Name) {
+		t.Fatalf("names mismatch: %+v != %+v", decrypted.Name, secret.Name)
+	}
+	if decrypted.Secret != secret.Secret {
+		t.Fatalf("secret mismatch: %q != %q", decrypted.Secret, secret.Secret)
+	}
+	if (decrypted.OTP == nil) != (secret.OTP == nil) {
+		t.Fatalf("otp nil mismatch: %+v vs %+v", decrypted.OTP, secret.OTP)
+	}
+	if decrypted.OTP != nil && !reflect.DeepEqual(*decrypted.OTP, *secret.OTP) {
+		t.Fatalf("otp mismatch: %+v != %+v", decrypted.OTP, secret.OTP)
+	}
+	if !decrypted.CreatedAt.Equal(secret.CreatedAt) {
+		t.Fatalf("created at mismatch: %v != %v", decrypted.CreatedAt, secret.CreatedAt)
+	}
+	if !decrypted.UpdatedAt.Equal(secret.UpdatedAt) {
+		t.Fatalf("updated at mismatch: %v != %v", decrypted.UpdatedAt, secret.UpdatedAt)
 	}
 }
 
