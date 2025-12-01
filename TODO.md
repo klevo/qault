@@ -13,5 +13,5 @@
 - [x] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Lazyvim like status bar. Move locked status in there, get rid of the header entirely.
 - [ ] TUI auto-lock after some time, with status message showing how much time remaining to lock
-- [ ] Handle secrets named like commands (probably by having dedicated "fetch" command)
 - [ ] Refactor tui.go to extract functions like deleteSecret and readSecret and similar
+- [ ] Git credential helper for fetching http remote username and password
