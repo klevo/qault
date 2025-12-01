@@ -518,7 +518,7 @@ func (m model) ItemFormView() string {
 		"Secret",
 		m.addItemSecret.View(),
 		"",
-		"OTP setup QR code",
+		"OTP setup",
 		m.addItemOTP.View(),
 	}
 	if m.addItemError != "" {
