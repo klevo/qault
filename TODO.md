@@ -16,3 +16,4 @@
 - [ ] Refactor tui.go to extract functions like deleteSecret and readSecret and similar
 - [ ] Git credential helper for fetching http remote username and password
 - [ ] Refactor forms and prompts with https://github.com/charmbracelet/huh
+- [ ] TUI initialization screen
