@@ -12,12 +12,12 @@ Install via [Homebrew](https://brew.sh/) (yup, you can use it on Linux too):
 brew install klevo/qault/qault
 ```
 
-Build from source (needs Go 1.25+):
+### Build from source (needs Go 1.25+)
 
 ```sh
 git clone https://github.com/klevo/qault.git
 cd qault
-go build -ldflags "-s -w -X qault/internal/cli.Version=$(git describe --tags --always --dirty)" ./cmd/qault
+go build -ldflags "-s -w" ./cmd/qault
 ./qault version
 ```
 
