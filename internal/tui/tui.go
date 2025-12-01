@@ -666,7 +666,7 @@ func (m model) remoteURIs() []string {
 	remotes := map[string]struct{}{}
 	for _, li := range m.list.Items() {
 		if it, ok := li.(item); ok {
-			if uri, ok := remoteURIFromNames(it.names); ok {
+			if uri, ok := store.RemoteURIFromNames(it.names); ok {
 				remotes[uri] = struct{}{}
 			}
 		}
@@ -678,23 +678,6 @@ func (m model) remoteURIs() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func remoteURIFromNames(names []string) (string, bool) {
-	if len(names) < 3 {
-		return "", false
-	}
-	if !strings.EqualFold(strings.TrimSpace(names[0]), "qault") {
-		return "", false
-	}
-	if !strings.EqualFold(strings.TrimSpace(names[1]), "remote") {
-		return "", false
-	}
-	uri := strings.TrimSpace(names[len(names)-1])
-	if uri == "" {
-		return "", false
-	}
-	return uri, true
 }
 
 func parseNameInput(name string) ([]string, error) {

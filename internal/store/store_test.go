@@ -11,6 +11,33 @@ import (
 	"qault/internal/otp"
 )
 
+func TestRemoteURIFromNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		parts   []string
+		wantURI string
+		wantOK  bool
+	}{
+		{"basic", []string{"qault", "remote", "git@github.com:example/repo.git"}, "git@github.com:example/repo.git", true},
+		{"extra parts", []string{"qault", "remote", "folder", "ssh://example.com/repo"}, "ssh://example.com/repo", true},
+		{"case-insensitive", []string{"QaUlT", "ReMoTe", "https://example.com/r.git"}, "https://example.com/r.git", true},
+		{"trim whitespace", []string{" qault ", " remote ", "  https://example.com/r.git  "}, "https://example.com/r.git", true},
+		{"too short", []string{"qault", "remote"}, "", false},
+		{"missing prefix", []string{"other", "remote", "git@host/repo"}, "", false},
+		{"missing remote marker", []string{"qault", "something", "git@host/repo"}, "", false},
+		{"empty uri", []string{"qault", "remote", "   "}, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURI, ok := RemoteURIFromNames(tt.parts)
+			if ok != tt.wantOK || gotURI != tt.wantURI {
+				t.Fatalf("RemoteURIFromNames(%v) = (%q, %v), want (%q, %v)", tt.parts, gotURI, ok, tt.wantURI, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestEncryptDecryptSecret(t *testing.T) {
 	secret := Secret{
 		Name:   []string{"email"},
