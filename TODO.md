@@ -15,3 +15,4 @@
 - [ ] TUI auto-lock after some time, with status message showing how much time remaining to lock
 - [ ] Refactor tui.go to extract functions like deleteSecret and readSecret and similar
 - [ ] Git credential helper for fetching http remote username and password
+- [ ] Refactor forms and prompts with https://github.com/charmbracelet/huh
