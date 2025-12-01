@@ -40,11 +40,14 @@ func (i item) Title() string {
 	return strings.Join(lines, " › ")
 }
 func (i item) Description() string {
-	desc := i.updatedAt.Format(timeDisplayLayout)
-	if i.otp {
-		desc += " +OTP"
+	parts := []string{i.updatedAt.Format(timeDisplayLayout)}
+	if i.secret == "" {
+		parts = append(parts, "empty")
 	}
-	return desc
+	if i.otp {
+		parts = append(parts, "+OTP")
+	}
+	return strings.Join(parts, " ")
 }
 func (i item) FilterValue() string {
 	filter := strings.ReplaceAll(i.name, "\n", "   ")
