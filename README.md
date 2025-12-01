@@ -4,9 +4,9 @@ Personal, post-quantum-conscious keychain/password manager written in Go using s
 
 This project is not intended for production use and is published for research purposes only.
 
-## 🧭 Installation (macOS)
+## 🧭 Installation (macOS, Linux)
 
-Install via Homebrew:
+Install via [Homebrew](https://brew.sh/) (yup, you can use it on Linux too):
 
 ```sh
 brew install klevo/qault/qault
