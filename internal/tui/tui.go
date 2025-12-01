@@ -644,9 +644,6 @@ func (m *model) saveNew(nameInput, secretValue, otpPath string) (tea.Cmd, tea.Cm
 	if err != nil {
 		return nil, nil, err
 	}
-	if secretValue == "" {
-		return nil, nil, errors.New("Secret cannot be empty")
-	}
 
 	records, err := m.loadRecords()
 	if err != nil {
@@ -702,9 +699,6 @@ func (m *model) saveEdit(nameInput, secretValue, otpPath string) (tea.Cmd, tea.C
 	names, err := parseNameInput(nameInput)
 	if err != nil {
 		return nil, nil, err
-	}
-	if secretValue == "" {
-		return nil, nil, errors.New("Secret cannot be empty")
 	}
 
 	current := m.currentEditingItem()
