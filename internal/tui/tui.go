@@ -172,9 +172,18 @@ func newModel() model {
 	masterPassInput.EchoCharacter = '•'
 
 	// Setup add item inputs
-	addItemName.SetHeight(3)
+	addItemName.SetHeight(4)
 	addItemSecret.SetHeight(5)
 	addItemOTP.Placeholder = "/path/to/qr-code.png"
+	faintLineNumbers := lipgloss.NewStyle().Faint(true)
+	addItemName.FocusedStyle.LineNumber = addItemName.FocusedStyle.LineNumber.Faint(true)
+	addItemName.FocusedStyle.CursorLineNumber = addItemName.FocusedStyle.CursorLineNumber.Faint(true)
+	addItemName.BlurredStyle.LineNumber = addItemName.BlurredStyle.LineNumber.Faint(true)
+	addItemName.BlurredStyle.CursorLineNumber = addItemName.BlurredStyle.CursorLineNumber.Faint(true)
+	addItemSecret.FocusedStyle.LineNumber = addItemSecret.FocusedStyle.LineNumber.Inherit(faintLineNumbers)
+	addItemSecret.FocusedStyle.CursorLineNumber = addItemSecret.FocusedStyle.CursorLineNumber.Inherit(faintLineNumbers)
+	addItemSecret.BlurredStyle.LineNumber = addItemSecret.BlurredStyle.LineNumber.Inherit(faintLineNumbers)
+	addItemSecret.BlurredStyle.CursorLineNumber = addItemSecret.BlurredStyle.CursorLineNumber.Inherit(faintLineNumbers)
 
 	// Setup list
 	delegate := newItemDelegate(delegateKeys)
