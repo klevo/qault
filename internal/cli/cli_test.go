@@ -49,6 +49,25 @@ func pop(values *[]string) (string, error) {
 	return v, nil
 }
 
+func TestVersion(t *testing.T) {
+	var out bytes.Buffer
+	var err bytes.Buffer
+
+	c := &CLI{
+		Out:      &out,
+		Err:      &err,
+		Prompter: &fakePrompter{},
+	}
+
+	exit := c.Run([]string{"version"})
+	if exit != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr: %q)", exit, err.String())
+	}
+	if out.String() == "" {
+		t.Fatalf("expected version output")
+	}
+}
+
 func runCommand(t *testing.T, dataDir string, prompter Prompter, args ...string) (int, string, string) {
 	t.Helper()
 

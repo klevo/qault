@@ -61,6 +61,7 @@ type CLI struct {
 }
 
 var timeNow = time.Now
+var Version = "dev"
 
 func NewDefault() *CLI {
 	return &CLI{
@@ -123,6 +124,9 @@ func (c *CLI) dispatch(args []string) error {
 		return c.handleList()
 	case "change-master-password":
 		return c.handleChangeMasterPassword()
+	case "version":
+		fmt.Fprintln(c.Out, Version)
+		return nil
 	default:
 		return c.handleFetchArgs(args)
 	}
