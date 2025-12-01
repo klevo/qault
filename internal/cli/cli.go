@@ -248,7 +248,7 @@ func (c *CLI) handleChangeMasterPassword() error {
 		return fatalError(err)
 	}
 
-	updatedPaths, err := reencryptSecrets(dir, oldRootKey, newRootKey)
+	updatedPaths, remotes, err := reencryptSecrets(dir, oldRootKey, newRootKey)
 	if err != nil {
 		return err
 	}
@@ -260,6 +260,12 @@ func (c *CLI) handleChangeMasterPassword() error {
 	commitPaths := append(updatedPaths, ifs.LockPath(dir))
 	if err := gitrepo.CommitFiles(dir, "master password changed", commitPaths...); err != nil {
 		return fatalError(err)
+	}
+
+	if len(remotes) > 0 {
+		if err := gitrepo.Push(dir, remotes); err != nil {
+			return fatalError(err)
+		}
 	}
 
 	fmt.Fprintln(c.Out, "Master password updated")
@@ -356,37 +362,48 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 	return nil
 }
 
-func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, error) {
+func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, []string, error) {
 	files, err := ifs.ListSecretFiles(dir)
 	if err != nil {
-		return nil, fatalError(err)
+		return nil, nil, fatalError(err)
 	}
 
 	var updated []string
+	remotes := map[string]struct{}{}
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
-			return nil, fatalError(err)
+			return nil, nil, fatalError(err)
 		}
 
 		secret, err := store.DecryptSecret(oldRootKey, data)
 		if err != nil {
-			return nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+			return nil, nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
+		}
+
+		if uri, ok := store.RemoteURIFromNames(secret.Name); ok {
+			remotes[uri] = struct{}{}
 		}
 
 		encrypted, err := store.EncryptSecret(newRootKey, secret)
 		if err != nil {
-			return nil, fatalError(err)
+			return nil, nil, fatalError(err)
 		}
 
 		if err := store.WriteFile(path, encrypted); err != nil {
-			return nil, fatalError(err)
+			return nil, nil, fatalError(err)
 		}
 
 		updated = append(updated, path)
 	}
 
-	return updated, nil
+	remoteList := make([]string, 0, len(remotes))
+	for uri := range remotes {
+		remoteList = append(remoteList, uri)
+	}
+	sort.Strings(remoteList)
+
+	return updated, remoteList, nil
 }
 
 func (c *CLI) handleEdit(names []string, useEditor bool) error {

@@ -629,6 +629,45 @@ func TestChangeMasterPassword(t *testing.T) {
 	}
 }
 
+func TestChangeMasterPasswordPushesRemotes(t *testing.T) {
+	dataDir := t.TempDir()
+	remoteDir := filepath.Join(dataDir, "remote.git")
+
+	if output, err := exec.Command("git", "init", "--bare", remoteDir).CombinedOutput(); err != nil {
+		t.Fatalf("git init bare: %v (%s)", err, string(output))
+	}
+
+	initPrompter := &fakePrompter{
+		newMaster: []string{"oldpw", "oldpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, initPrompter, "init"); exit != 0 {
+		t.Fatalf("init failed: %s", errOut)
+	}
+
+	remotePrompter := &fakePrompter{
+		master:  []string{"oldpw"},
+		secrets: []string{"token"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, remotePrompter, "add", "qault", "remote", remoteDir); exit != 0 {
+		t.Fatalf("add remote entry failed: %s", errOut)
+	}
+
+	changePrompter := &fakePrompter{
+		master:    []string{"oldpw"},
+		newMaster: []string{"newpw", "newpw"},
+	}
+	if exit, _, errOut := runCommand(t, dataDir, changePrompter, "change-master-password"); exit != 0 {
+		t.Fatalf("change-master-password failed: %s", errOut)
+	}
+
+	logCmd := exec.Command("git", "--git-dir", remoteDir, "log", "--all", "-1", "--pretty=%s")
+	if output, err := logCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git log remote: %v (%s)", err, string(output))
+	} else if strings.TrimSpace(string(output)) != "master password changed" {
+		t.Fatalf("unexpected remote head message: %q", strings.TrimSpace(string(output)))
+	}
+}
+
 func TestChangeMasterPasswordRejectsWrongCurrent(t *testing.T) {
 	dataDir := t.TempDir()
 
