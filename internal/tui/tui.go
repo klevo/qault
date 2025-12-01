@@ -41,6 +41,8 @@ var (
 					Bold(true).
 					Foreground(lipgloss.AdaptiveColor{Light: "#B58900", Dark: "#B58900"})
 
+	faintStatusStyle = lipgloss.NewStyle().Faint(true).Render
+
 	statusMessageStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}).
 				Render
@@ -127,6 +129,7 @@ type model struct {
 	rootKey         []byte
 	pushDebounceID  int
 	pushInFlight    bool
+	remoteStatus    remoteStatus
 }
 
 type screenState string
@@ -152,6 +155,16 @@ const (
 
 const pushDebounceDelay = time.Second
 
+type remoteStatus string
+
+const (
+	remoteStatusUnknown  remoteStatus = ""
+	remoteStatusChecking remoteStatus = "checking remotes"
+	remoteStatusSynced   remoteStatus = "synced"
+	remoteStatusBehind   remoteStatus = "behind remote"
+	remoteStatusError    remoteStatus = "remote error"
+)
+
 type statusMessageMsg struct {
 	text    string
 	isError bool
@@ -163,6 +176,10 @@ type pushDebounceMsg struct {
 
 type pushFinishedMsg struct {
 	err error
+}
+
+type remoteStatusMsg struct {
+	status remoteStatus
 }
 
 func newModel() model {
@@ -222,6 +239,7 @@ func newModel() model {
 		formHelp:        formHelp,
 		keys:            listKeys,
 		delegateKeys:    delegateKeys,
+		remoteStatus:    remoteStatusUnknown,
 	}
 }
 
@@ -236,6 +254,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMessageMsg:
 		m.statusMessage = msg.text
 		m.statusIsError = msg.isError
+		return m, tea.Batch(cmds...)
+	case remoteStatusMsg:
+		m.remoteStatus = msg.status
 		return m, tea.Batch(cmds...)
 	case pushDebounceMsg:
 		if msg.id != m.pushDebounceID {
@@ -256,9 +277,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pushInFlight = false
 		if msg.err != nil {
 			statusCmd := newStatusMessage(msg.err.Error(), true)
+			m.remoteStatus = remoteStatusError
 			return m, tea.Batch(append(cmds, statusCmd)...)
 		}
-		return m, tea.Batch(cmds...)
+		remotes := m.remoteURIs()
+		if len(remotes) == 0 || m.dataDir == "" {
+			m.remoteStatus = remoteStatusUnknown
+			return m, tea.Batch(cmds...)
+		}
+		m.remoteStatus = remoteStatusChecking
+		checkCmd := m.checkRemotes(remotes)
+		return m, tea.Batch(append(cmds, checkCmd)...)
 	case tea.WindowSizeMsg:
 		h, v := appStyle.GetFrameSize()
 		availableHeight := msg.Height - v - m.headerHeight() - m.confirmationHeight()
@@ -309,6 +338,17 @@ func (m model) LockUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 			m.screen = screenList
 			m.delegateKeys.remove.SetEnabled(len(items) > 0)
 			cmd := m.list.SetItems(items)
+			remotes := m.remoteURIs()
+			var checkCmd tea.Cmd
+			if len(remotes) > 0 {
+				m.remoteStatus = remoteStatusChecking
+				checkCmd = m.checkRemotes(remotes)
+			} else {
+				m.remoteStatus = remoteStatusUnknown
+			}
+			if checkCmd != nil {
+				cmds = append(cmds, checkCmd)
+			}
 			return m, append(cmds, cmd)
 		}
 	}
@@ -576,7 +616,29 @@ func (m model) HeaderView() string {
 		status = "locked"
 	}
 
-	return headerStyle.Render(fmt.Sprintf("%s %s", titleStyle.Render("qault"), status))
+	parts := []string{titleStyle.Render("qault"), status}
+	if m.screen != screenUnlock {
+		if remoteStatus := m.remoteStatusView(); remoteStatus != "" {
+			parts = append(parts, remoteStatus)
+		}
+	}
+
+	return headerStyle.Render(strings.Join(parts, " "))
+}
+
+func (m model) remoteStatusView() string {
+	switch m.remoteStatus {
+	case remoteStatusChecking:
+		return faintStatusStyle(string(remoteStatusChecking))
+	case remoteStatusSynced:
+		return statusMessageStyle(string(remoteStatusSynced))
+	case remoteStatusBehind:
+		return errorStyle.Render(string(remoteStatusBehind))
+	case remoteStatusError:
+		return errorStyle.Render(string(remoteStatusError))
+	default:
+		return ""
+	}
 }
 
 func (m model) headerHeight() int {
@@ -654,6 +716,24 @@ func (m model) pushToRemotes(remotes []string) tea.Cmd {
 	return func() tea.Msg {
 		err := gitrepo.Push(dir, remotes)
 		return pushFinishedMsg{err: err}
+	}
+}
+
+func (m model) checkRemotes(remotes []string) tea.Cmd {
+	dir := m.dataDir
+	return func() tea.Msg {
+		if len(remotes) == 0 || dir == "" {
+			return remoteStatusMsg{status: remoteStatusUnknown}
+		}
+
+		behind, err := gitrepo.RemoteBehind(dir, remotes)
+		if err != nil {
+			return remoteStatusMsg{status: remoteStatusError}
+		}
+		if behind {
+			return remoteStatusMsg{status: remoteStatusBehind}
+		}
+		return remoteStatusMsg{status: remoteStatusSynced}
 	}
 }
 

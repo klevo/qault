@@ -1,10 +1,12 @@
 package gitrepo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Init ensures the directory is a git repository with basic user identity set.
@@ -68,6 +70,50 @@ func Push(dir string, remotes []string) error {
 	return nil
 }
 
+// RemoteBehind reports whether any of the provided remotes has commits that the local HEAD does not.
+// It fetches each remote's HEAD to compare ancestry. Returns true if local is behind any remote.
+func RemoteBehind(dir string, remotes []string) (bool, error) {
+	if len(remotes) == 0 {
+		return false, nil
+	}
+	if err := Init(dir); err != nil {
+		return false, err
+	}
+
+	head, err := runOutput(dir, "rev-parse", "HEAD")
+	if err != nil {
+		return false, err
+	}
+
+	for _, remote := range remotes {
+		if err := run(dir, "fetch", "--no-tags", remote, "HEAD"); err != nil {
+			return false, fmt.Errorf("git fetch %s: %w", remote, err)
+		}
+
+		remoteHead, err := runOutput(dir, "rev-parse", "FETCH_HEAD")
+		if err != nil {
+			return false, fmt.Errorf("git fetch-head %s: %w", remote, err)
+		}
+
+		if remoteHead == head {
+			continue
+		}
+
+		_, exitCode, err := runWithExitCode(dir, "merge-base", "--is-ancestor", head, remoteHead)
+		if err != nil {
+			return false, err
+		}
+		if exitCode == 0 {
+			return true, nil
+		}
+		if exitCode != 1 {
+			return false, fmt.Errorf("git merge-base --is-ancestor %s %s exit %d", head, remoteHead, exitCode)
+		}
+	}
+
+	return false, nil
+}
+
 func repositoryExists(dir string) (bool, error) {
 	err := run(dir, "rev-parse", "--is-inside-work-tree")
 	if err == nil {
@@ -92,10 +138,39 @@ func ensureIdentity(dir string) error {
 }
 
 func run(dir string, args ...string) error {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%v: %s", err, string(output))
+	output, code, err := runWithExitCode(dir, args...)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("git %s: %s", strings.Join(args, " "), output)
 	}
 	return nil
+}
+
+func runOutput(dir string, args ...string) (string, error) {
+	output, code, err := runWithExitCode(dir, args...)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(output))
+	}
+	return strings.TrimSpace(output), nil
+}
+
+func runWithExitCode(dir string, args ...string) (string, int, error) {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return string(output), 0, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return string(output), exitErr.ExitCode(), nil
+	}
+	return "", 0, fmt.Errorf("%v: %s", err, string(output))
 }
