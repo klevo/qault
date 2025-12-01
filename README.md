@@ -4,8 +4,6 @@ Personal, post-quantum-conscious keychain/password manager written in Go using s
 
 This project is not intended for production use and is published for research purposes only.
 
-Command line interface inspired by [pass](https://www.passwordstore.org/).
-
 ## 🔍 Motivation
 
 I want a simple replacement for cloud-based password managers from big vendors. I’d like to recover access to all my services even if I lose every device, by remembering one master password and reaching a remote Git repository.
