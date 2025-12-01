@@ -10,7 +10,7 @@
 - [x] Implement change-password command
 - [x] Experiment with https://github.com/charmbracelet/bubbletea
 - [x] Implement ctrl+g on item form, that replaces first line of secret with a strongly generated password
-- [ ] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
+- [x] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
 - [ ] Lazyvim like status bar. Move locked status in there, get rid of the header entirely.
 - [ ] TUI auto-lock after some time, with status message showing how much time remaining to lock
 - [ ] Handle secrets named like commands (probably by having dedicated "fetch" command)

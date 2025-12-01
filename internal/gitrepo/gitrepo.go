@@ -51,6 +51,23 @@ func CommitFiles(dir, message string, paths ...string) error {
 	return nil
 }
 
+// Push attempts to push the current HEAD to each remote provided.
+func Push(dir string, remotes []string) error {
+	if len(remotes) == 0 {
+		return nil
+	}
+	if err := Init(dir); err != nil {
+		return err
+	}
+
+	for _, remote := range remotes {
+		if err := run(dir, "push", remote, "HEAD"); err != nil {
+			return fmt.Errorf("git push %s: %w", remote, err)
+		}
+	}
+	return nil
+}
+
 func repositoryExists(dir string) (bool, error) {
 	err := run(dir, "rev-parse", "--is-inside-work-tree")
 	if err == nil {

@@ -125,6 +125,8 @@ type model struct {
 	delegateKeys    *itemDelegateKeyMap
 	dataDir         string
 	rootKey         []byte
+	pushDebounceID  int
+	pushInFlight    bool
 }
 
 type screenState string
@@ -148,9 +150,19 @@ const (
 	addItemFocusOTP    = "otp"
 )
 
+const pushDebounceDelay = time.Second
+
 type statusMessageMsg struct {
 	text    string
 	isError bool
+}
+
+type pushDebounceMsg struct {
+	id int
+}
+
+type pushFinishedMsg struct {
+	err error
 }
 
 func newModel() model {
@@ -229,6 +241,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMessageMsg:
 		m.statusMessage = msg.text
 		m.statusIsError = msg.isError
+		return m, tea.Batch(cmds...)
+	case pushDebounceMsg:
+		if msg.id != m.pushDebounceID {
+			return m, tea.Batch(cmds...)
+		}
+		if m.pushInFlight {
+			cmd := m.schedulePush()
+			return m, tea.Batch(append(cmds, cmd)...)
+		}
+		remotes := m.remoteURIs()
+		if len(remotes) == 0 || m.dataDir == "" {
+			return m, tea.Batch(cmds...)
+		}
+		m.pushInFlight = true
+		cmd := m.pushToRemotes(remotes)
+		return m, tea.Batch(append(cmds, cmd)...)
+	case pushFinishedMsg:
+		m.pushInFlight = false
+		if msg.err != nil {
+			statusCmd := newStatusMessage(msg.err.Error(), true)
+			return m, tea.Batch(append(cmds, statusCmd)...)
+		}
 		return m, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		h, v := appStyle.GetFrameSize()
@@ -347,7 +381,8 @@ func (m model) ItemFormUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd
 			m.addItemSecret.Blur()
 			m.addItemOTP.Blur()
 			m.addItemError = ""
-			return m, append(cmds, statusCmd, reloadCmd)
+			pushCmd := m.schedulePush()
+			return m, append(cmds, statusCmd, reloadCmd, pushCmd)
 		case key.Matches(msg, m.formKeys.cancel):
 			m.screen = screenList
 			m.formMode = formModeAdd
@@ -437,7 +472,8 @@ func (m model) ListUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 
 				m.pendingDelete = nil
 				statusCmd := newStatusMessage("Deleted "+p.item.Title(), false)
-				return m, append(cmds, statusCmd, reloadCmd)
+				pushCmd := m.schedulePush()
+				return m, append(cmds, statusCmd, reloadCmd, pushCmd)
 			case "esc":
 				m.pendingDelete = nil
 				statusCmd := newStatusMessage("Canceled deletion", false)
@@ -608,6 +644,57 @@ func toListItems(secrets []auth.SecretRecord) []list.Item {
 		listItems[i] = items[i]
 	}
 	return listItems
+}
+
+func (m *model) schedulePush() tea.Cmd {
+	m.pushDebounceID++
+	id := m.pushDebounceID
+	return tea.Tick(pushDebounceDelay, func(time.Time) tea.Msg {
+		return pushDebounceMsg{id: id}
+	})
+}
+
+func (m model) pushToRemotes(remotes []string) tea.Cmd {
+	dir := m.dataDir
+	return func() tea.Msg {
+		err := gitrepo.Push(dir, remotes)
+		return pushFinishedMsg{err: err}
+	}
+}
+
+func (m model) remoteURIs() []string {
+	remotes := map[string]struct{}{}
+	for _, li := range m.list.Items() {
+		if it, ok := li.(item); ok {
+			if uri, ok := remoteURIFromNames(it.names); ok {
+				remotes[uri] = struct{}{}
+			}
+		}
+	}
+
+	out := make([]string, 0, len(remotes))
+	for uri := range remotes {
+		out = append(out, uri)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func remoteURIFromNames(names []string) (string, bool) {
+	if len(names) < 3 {
+		return "", false
+	}
+	if !strings.EqualFold(strings.TrimSpace(names[0]), "qault") {
+		return "", false
+	}
+	if !strings.EqualFold(strings.TrimSpace(names[1]), "remote") {
+		return "", false
+	}
+	uri := strings.TrimSpace(names[len(names)-1])
+	if uri == "" {
+		return "", false
+	}
+	return uri, true
 }
 
 func parseNameInput(name string) ([]string, error) {
