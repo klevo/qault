@@ -542,7 +542,14 @@ func (m model) View() string {
 }
 
 func (m model) ItemFormView() string {
+	title := "New item"
+	if m.formMode == formModeEdit {
+		title = "Edit item"
+	}
+
 	parts := []string{
+		title,
+		"",
 		"Name",
 		m.addItemName.View(),
 		"",
@@ -565,15 +572,8 @@ func (m model) ItemFormView() string {
 
 func (m model) HeaderView() string {
 	status := "unlocked"
-	switch m.screen {
-	case screenUnlock:
+	if m.screen == screenUnlock {
 		status = "locked"
-	case screenItemForm:
-		if m.formMode == formModeEdit {
-			status = "Edit item"
-		} else {
-			status = "New item"
-		}
 	}
 
 	return headerStyle.Render(fmt.Sprintf("%s %s", titleStyle.Render("qault"), status))
