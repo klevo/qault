@@ -127,6 +127,18 @@ qault NAME... -o
 
 Outputs the OTP if present; otherwise notify the user and exit with code 1.
 
+## 🔗 Remote sync
+
+Background git pushes run after each commit when the vault contains one or more remote definitions. Add a secret whose name starts with `qault`, `remote` and ends with the desired remote URI (each on separate line), for example:
+
+```
+qault
+remote 
+git@github.com:example/qault-vault.git
+```
+
+The TUI will discover all such entries (case-insensitive on `qault`/`remote`), aggregate the URIs, and push `HEAD` to each after add/edit/delete operations. Remove or rename the remote entry to stop pushing to that URI.
+
 ## 🧪 Development
 
 ### Running the CLI
