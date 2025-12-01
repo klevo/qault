@@ -12,6 +12,15 @@ Install via [Homebrew](https://brew.sh/) (yup, you can use it on Linux too):
 brew install klevo/qault/qault
 ```
 
+Build from source (needs Go 1.25+):
+
+```sh
+git clone https://github.com/klevo/qault.git
+cd qault
+go build -ldflags "-s -w -X qault/internal/cli.Version=$(git describe --tags --always --dirty)" ./cmd/qault
+./qault version
+```
+
 ## 🔍 Motivation
 
 I want a simple replacement for cloud-based password managers from big vendors. I’d like to recover access to all my services even if I lose every device, by remembering one master password and reaching a remote Git repository.
