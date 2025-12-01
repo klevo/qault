@@ -185,6 +185,8 @@ func newModel() model {
 
 	// Setup add item inputs
 	addItemName.SetHeight(4)
+	// addItemName.FocusedStyle.Prompt = confirmationMessageStyle
+	// addItemName.BlurredStyle.Prompt = confirmationMessageStyle
 	addItemSecret.SetHeight(5)
 	addItemOTP.Placeholder = "/path/to/qr-code.png"
 	addItemName.ShowLineNumbers = false
