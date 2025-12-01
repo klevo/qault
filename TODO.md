@@ -11,6 +11,7 @@
 - [x] Experiment with https://github.com/charmbracelet/bubbletea
 - [x] Implement ctrl+g on item form, that replaces first line of secret with a strongly generated password
 - [x] Git integration, with remote(s) fetch from the vault. After each edit, push changes.
+- [ ] Unlock screen keybind help
 - [ ] Lazyvim like status bar. Move locked status in there, get rid of the header entirely.
 - [ ] TUI auto-lock after some time, with status message showing how much time remaining to lock
 - [ ] Refactor tui.go to extract functions like deleteSecret and readSecret and similar
