@@ -266,7 +266,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.schedulePush()
 			return m, tea.Batch(append(cmds, cmd)...)
 		}
-		remotes := m.remoteURIs()
+		remotes := m.remoteDefinitions()
 		if len(remotes) == 0 || m.dataDir == "" {
 			return m, tea.Batch(cmds...)
 		}
@@ -280,7 +280,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.remoteStatus = remoteStatusError
 			return m, tea.Batch(append(cmds, statusCmd)...)
 		}
-		remotes := m.remoteURIs()
+		remotes := m.remoteDefinitions()
 		if len(remotes) == 0 || m.dataDir == "" {
 			m.remoteStatus = remoteStatusUnknown
 			return m, tea.Batch(cmds...)
@@ -338,7 +338,7 @@ func (m model) LockUpdate(msg tea.Msg, cmds []tea.Cmd) (tea.Model, []tea.Cmd) {
 			m.screen = screenList
 			m.delegateKeys.remove.SetEnabled(len(items) > 0)
 			cmd := m.list.SetItems(items)
-			remotes := m.remoteURIs()
+			remotes := m.remoteDefinitions()
 			var checkCmd tea.Cmd
 			if len(remotes) > 0 {
 				m.remoteStatus = remoteStatusChecking
@@ -711,7 +711,7 @@ func (m *model) schedulePush() tea.Cmd {
 	})
 }
 
-func (m model) pushToRemotes(remotes []string) tea.Cmd {
+func (m model) pushToRemotes(remotes []store.RemoteDefinition) tea.Cmd {
 	dir := m.dataDir
 	return func() tea.Msg {
 		err := gitrepo.Push(dir, remotes)
@@ -719,7 +719,7 @@ func (m model) pushToRemotes(remotes []string) tea.Cmd {
 	}
 }
 
-func (m model) checkRemotes(remotes []string) tea.Cmd {
+func (m model) checkRemotes(remotes []store.RemoteDefinition) tea.Cmd {
 	dir := m.dataDir
 	return func() tea.Msg {
 		if len(remotes) == 0 || dir == "" {
@@ -737,22 +737,17 @@ func (m model) checkRemotes(remotes []string) tea.Cmd {
 	}
 }
 
-func (m model) remoteURIs() []string {
-	remotes := map[string]struct{}{}
+func (m model) remoteDefinitions() []store.RemoteDefinition {
+	secrets := make([]store.Secret, 0, len(m.list.Items()))
 	for _, li := range m.list.Items() {
 		if it, ok := li.(item); ok {
-			if uri, ok := store.RemoteURIFromNames(it.names); ok {
-				remotes[uri] = struct{}{}
-			}
+			secrets = append(secrets, store.Secret{
+				Name:   it.names,
+				Secret: it.secret,
+			})
 		}
 	}
-
-	out := make([]string, 0, len(remotes))
-	for uri := range remotes {
-		out = append(out, uri)
-	}
-	sort.Strings(out)
-	return out
+	return store.RemoteDefinitionsFromSecrets(secrets)
 }
 
 func parseNameInput(name string) ([]string, error) {

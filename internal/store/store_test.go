@@ -19,13 +19,14 @@ func TestRemoteURIFromNames(t *testing.T) {
 		wantOK  bool
 	}{
 		{"basic", []string{"qault", "remote", "git@github.com:example/repo.git"}, "git@github.com:example/repo.git", true},
-		{"extra parts", []string{"qault", "remote", "folder", "ssh://example.com/repo"}, "ssh://example.com/repo", true},
-		{"case-insensitive", []string{"QaUlT", "ReMoTe", "https://example.com/r.git"}, "https://example.com/r.git", true},
-		{"trim whitespace", []string{" qault ", " remote ", "  https://example.com/r.git  "}, "https://example.com/r.git", true},
+		{"with username", []string{"qault", "remote", "https://example.com/r.git", "alice"}, "https://example.com/r.git", true},
+		{"case-insensitive", []string{"QaUlT", "ReMoTe", "https://example.com/r.git", "ALICE"}, "https://example.com/r.git", true},
+		{"trim whitespace", []string{" qault ", " remote ", "  https://example.com/r.git  ", "  alice  "}, "https://example.com/r.git", true},
 		{"too short", []string{"qault", "remote"}, "", false},
 		{"missing prefix", []string{"other", "remote", "git@host/repo"}, "", false},
 		{"missing remote marker", []string{"qault", "something", "git@host/repo"}, "", false},
-		{"empty uri", []string{"qault", "remote", "   "}, "", false},
+		{"empty uri", []string{"qault", "remote", "   ", "user"}, "", false},
+		{"empty username", []string{"qault", "remote", "https://example.com/r.git", "   "}, "", false},
 	}
 
 	for _, tt := range tests {
@@ -35,6 +36,26 @@ func TestRemoteURIFromNames(t *testing.T) {
 				t.Fatalf("RemoteURIFromNames(%v) = (%q, %v), want (%q, %v)", tt.parts, gotURI, ok, tt.wantURI, tt.wantOK)
 			}
 		})
+	}
+}
+
+func TestRemoteDefinitionsFromSecrets(t *testing.T) {
+	secrets := []Secret{
+		{Name: []string{"qault", "remote", "https://example.com/one.git"}, Secret: "ignored"},
+		{Name: []string{"qault", "remote", "https://example.com/two.git", "alice"}, Secret: "password"},
+		{Name: []string{"qault", "remote", "https://example.com/two.git", "bob"}, Secret: ""}, // missing password, should not override credentials
+		{Name: []string{"other", "remote", "https://example.com/three.git"}, Secret: "password"},
+		{Name: []string{"qault", "remote", "https://example.com/one.git", "carol"}, Secret: "secret"}, // overrides first with credentials
+	}
+
+	got := RemoteDefinitionsFromSecrets(secrets)
+	want := []RemoteDefinition{
+		{URI: "https://example.com/one.git", Username: "carol", Password: "secret"},
+		{URI: "https://example.com/two.git", Username: "alice", Password: "password"},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("RemoteDefinitionsFromSecrets mismatch:\n got  %+v\n want %+v", got, want)
 	}
 }
 

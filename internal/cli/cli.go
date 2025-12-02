@@ -366,14 +366,14 @@ func (c *CLI) handleMove(oldNames, newNames []string) error {
 	return nil
 }
 
-func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, []string, error) {
+func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, []store.RemoteDefinition, error) {
 	files, err := ifs.ListSecretFiles(dir)
 	if err != nil {
 		return nil, nil, fatalError(err)
 	}
 
 	var updated []string
-	remotes := map[string]struct{}{}
+	remotes := map[string]store.RemoteDefinition{}
 	for _, path := range files {
 		data, err := store.ReadFile(path)
 		if err != nil {
@@ -385,8 +385,14 @@ func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, []st
 			return nil, nil, userError(fmt.Sprintf("Failed to decrypt secret %s", filepath.Base(path)))
 		}
 
-		if uri, ok := store.RemoteURIFromNames(secret.Name); ok {
-			remotes[uri] = struct{}{}
+		if uri, username, ok := store.RemoteDetailsFromNames(secret.Name); ok {
+			definition := remotes[uri]
+			definition.URI = uri
+			if username != "" && strings.TrimSpace(secret.Secret) != "" {
+				definition.Username = username
+				definition.Password = secret.Secret
+			}
+			remotes[uri] = definition
 		}
 
 		encrypted, err := store.EncryptSecret(newRootKey, secret)
@@ -401,11 +407,15 @@ func reencryptSecrets(dir string, oldRootKey, newRootKey []byte) ([]string, []st
 		updated = append(updated, path)
 	}
 
-	remoteList := make([]string, 0, len(remotes))
+	remoteList := make([]store.RemoteDefinition, 0, len(remotes))
+	keys := make([]string, 0, len(remotes))
 	for uri := range remotes {
-		remoteList = append(remoteList, uri)
+		keys = append(keys, uri)
 	}
-	sort.Strings(remoteList)
+	sort.Strings(keys)
+	for _, uri := range keys {
+		remoteList = append(remoteList, remotes[uri])
+	}
 
 	return updated, remoteList, nil
 }

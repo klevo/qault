@@ -7,7 +7,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"qault/internal/store"
 )
+
+var gitBinary = "git"
+
+type runOptions struct {
+	env map[string]string
+}
 
 // Init ensures the directory is a git repository with basic user identity set.
 func Init(dir string) error {
@@ -54,7 +62,7 @@ func CommitFiles(dir, message string, paths ...string) error {
 }
 
 // Push attempts to push the current HEAD to each remote provided.
-func Push(dir string, remotes []string) error {
+func Push(dir string, remotes []store.RemoteDefinition) error {
 	if len(remotes) == 0 {
 		return nil
 	}
@@ -63,8 +71,11 @@ func Push(dir string, remotes []string) error {
 	}
 
 	for _, remote := range remotes {
-		if err := run(dir, "push", remote, "HEAD"); err != nil {
-			return fmt.Errorf("git push %s: %w", remote, err)
+		if remote.URI == "" {
+			continue
+		}
+		if err := pushRemote(dir, remote); err != nil {
+			return fmt.Errorf("git push %s: %w", remote.URI, err)
 		}
 	}
 	return nil
@@ -72,7 +83,7 @@ func Push(dir string, remotes []string) error {
 
 // RemoteBehind reports whether any of the provided remotes has commits that the local HEAD does not.
 // It fetches each remote's HEAD to compare ancestry. Returns true if local is behind any remote.
-func RemoteBehind(dir string, remotes []string) (bool, error) {
+func RemoteBehind(dir string, remotes []store.RemoteDefinition) (bool, error) {
 	if len(remotes) == 0 {
 		return false, nil
 	}
@@ -86,13 +97,16 @@ func RemoteBehind(dir string, remotes []string) (bool, error) {
 	}
 
 	for _, remote := range remotes {
-		if err := run(dir, "fetch", "--no-tags", remote, "HEAD"); err != nil {
-			return false, fmt.Errorf("git fetch %s: %w", remote, err)
+		if remote.URI == "" {
+			continue
+		}
+		if err := fetchRemote(dir, remote); err != nil {
+			return false, fmt.Errorf("git fetch %s: %w", remote.URI, err)
 		}
 
 		remoteHead, err := runOutput(dir, "rev-parse", "FETCH_HEAD")
 		if err != nil {
-			return false, fmt.Errorf("git fetch-head %s: %w", remote, err)
+			return false, fmt.Errorf("git fetch-head %s: %w", remote.URI, err)
 		}
 
 		if remoteHead == head {
@@ -112,6 +126,28 @@ func RemoteBehind(dir string, remotes []string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func pushRemote(dir string, remote store.RemoteDefinition) error {
+	opts, cleanup, err := credentialsOptions(remote)
+	if err != nil {
+		return err
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+	return runWithOptions(dir, opts, "push", remote.URI, "HEAD")
+}
+
+func fetchRemote(dir string, remote store.RemoteDefinition) error {
+	opts, cleanup, err := credentialsOptions(remote)
+	if err != nil {
+		return err
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+	return runWithOptions(dir, opts, "fetch", "--no-tags", remote.URI, "HEAD")
 }
 
 func repositoryExists(dir string) (bool, error) {
@@ -159,9 +195,36 @@ func runOutput(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
+func runWithOptions(dir string, opts runOptions, args ...string) error {
+	output, code, err := runWithExitCodeOpts(dir, opts, args...)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("git %s: %s", strings.Join(args, " "), output)
+	}
+	return nil
+}
+
 func runWithExitCode(dir string, args ...string) (string, int, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	return runWithExitCodeOpts(dir, runOptions{}, args...)
+}
+
+func runWithExitCodeOpts(dir string, opts runOptions, args ...string) (string, int, error) {
+	cmd := exec.Command(gitBinary, append([]string{"-C", dir}, args...)...)
+
+	env := append([]string{}, os.Environ()...)
+	hasTerminalPrompt := false
+	for key, value := range opts.env {
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+		if strings.EqualFold(key, "GIT_TERMINAL_PROMPT") {
+			hasTerminalPrompt = true
+		}
+	}
+	if !hasTerminalPrompt {
+		env = append(env, "GIT_TERMINAL_PROMPT=0")
+	}
+	cmd.Env = env
 
 	output, err := cmd.CombinedOutput()
 	if err == nil {
@@ -173,4 +236,47 @@ func runWithExitCode(dir string, args ...string) (string, int, error) {
 		return string(output), exitErr.ExitCode(), nil
 	}
 	return "", 0, fmt.Errorf("%v: %s", err, string(output))
+}
+
+func credentialsOptions(remote store.RemoteDefinition) (runOptions, func(), error) {
+	if remote.Username == "" || remote.Password == "" {
+		return runOptions{}, nil, nil
+	}
+	env, cleanup, err := newAskPassEnv(remote.Username, remote.Password)
+	if err != nil {
+		return runOptions{}, nil, err
+	}
+	return runOptions{env: env}, cleanup, nil
+}
+
+func newAskPassEnv(username, password string) (map[string]string, func(), error) {
+	script := "#!/bin/sh\ncase \"$1\" in\n*Username*) printf '%s\\n' \"$QAULT_GIT_USERNAME\";;\n*Password*) printf '%s\\n' \"$QAULT_GIT_PASSWORD\";;\n*) exit 1;;\nesac\n"
+	file, err := os.CreateTemp("", "qault-askpass-*")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanup := func() {
+		_ = os.Remove(file.Name())
+	}
+
+	if _, err := file.WriteString(script); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if err := file.Chmod(0o700); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+
+	env := map[string]string{
+		"GIT_ASKPASS":        file.Name(),
+		"QAULT_GIT_USERNAME": username,
+		"QAULT_GIT_PASSWORD": password,
+	}
+	return env, cleanup, nil
 }
