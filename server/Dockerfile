@@ -24,8 +24,11 @@ echo "${USERNAME}:${BCRYPT_PASSWORD}" > "${htpasswd_file}"
 chown www-data:www-data "${htpasswd_file}"
 chmod 640 "${htpasswd_file}"
 
+mkdir -p /var/lib/git
+chown -R www-data:www-data /var/lib/git
+
 repo_path="/var/lib/git/${REPO_NAME}.git"
-if [ ! -d "${repo_path}" ]; then
+if [ ! -d "${repo_path}" ] || [ -z "$(ls -A "${repo_path}" 2>/dev/null)" ]; then
 	git init --bare "${repo_path}"
 	chown -R www-data:www-data "${repo_path}"
 fi

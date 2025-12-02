@@ -187,6 +187,7 @@ docker run -p 8080:8080 \
   -e USERNAME=alice \
   -e BCRYPT_PASSWORD="$BCRYPT_PASSWORD" \
   -e REPO_NAME=qault-vault \
+  -v "$(pwd)/git-data:/var/lib/git" \
   qault/git-http
 ```
 
@@ -197,3 +198,5 @@ git clone http://alice:plain-password@localhost:8080/qault-vault.git
 ```
 
 The container logs (`docker logs`) surface nginx access/error logs. Basic auth endpoints are rate limited per client IP (5 req/minute with a burst of 10) to slow brute-force attempts.
+
+Mount `/var/lib/git` to persist the bare repository between runs. The container initializes the repo only when the target directory is missing or empty, so existing data on the mount is left intact.
