@@ -174,3 +174,24 @@ Run `go run ./cmd/qault -- list` (or any other subcommand) to exercise the CLI d
 ```sh
 go test ./...
 ```
+
+### HTTP git server for testing pushes
+
+Build and run a minimal HTTP git server with basic auth:
+
+```sh
+docker build -t qault/git-http ./server
+
+BCRYPT_PASSWORD=$(htpasswd -nbBC 12 alice 'plain-password' | cut -d: -f2)
+docker run -p 8080:8080 \
+  -e USERNAME=alice \
+  -e BCRYPT_PASSWORD="$BCRYPT_PASSWORD" \
+  -e REPO_NAME=qault-vault \
+  qault/git-http
+```
+
+Clone or push with your plain password; the server checks it against the bcrypt hash you supplied:
+
+```sh
+git clone http://alice:plain-password@localhost:8080/qault-vault.git
+```
