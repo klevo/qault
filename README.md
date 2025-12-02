@@ -195,3 +195,5 @@ Clone or push with your plain password; the server checks it against the bcrypt 
 ```sh
 git clone http://alice:plain-password@localhost:8080/qault-vault.git
 ```
+
+The container logs (`docker logs`) surface nginx access/error logs. Basic auth endpoints are rate limited per client IP (5 req/minute with a burst of 10) to slow brute-force attempts.

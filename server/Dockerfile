@@ -7,6 +7,7 @@ RUN apt-get update \
 		nginx-light \
 	&& rm -rf /var/lib/apt/lists/*
 
+RUN git config --global init.defaultBranch main
 RUN mkdir -p /var/lib/git /run/fcgiwrap
 
 COPY --chmod=755 <<'EOF' /entrypoint.sh
@@ -29,6 +30,33 @@ if [ ! -d "${repo_path}" ]; then
 	chown -R www-data:www-data "${repo_path}"
 fi
 
+cat > /etc/nginx/nginx.conf <<'NGINXMAIN'
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+	worker_connections 1024;
+}
+
+http {
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+
+	log_format main '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+	access_log /dev/stdout main;
+	error_log /dev/stderr warn;
+
+	sendfile on;
+	keepalive_timeout 65;
+
+	# Basic rate limiting to slow repeated auth attempts per client IP.
+	limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=5r/m;
+
+	include /etc/nginx/sites-enabled/*;
+}
+NGINXMAIN
+
 cat > /etc/nginx/sites-available/default <<'NGINXCONF'
 server {
 	listen 8080 default_server;
@@ -46,9 +74,13 @@ server {
 		fastcgi_param SCRIPT_FILENAME /usr/lib/git-core/git-http-backend;
 		fastcgi_param REMOTE_USER $remote_user;
 		fastcgi_pass unix:{{SOCKET_PATH}};
+		limit_req zone=auth_limit burst=10 nodelay;
 	}
 }
 NGINXCONF
+
+mkdir -p /etc/nginx/sites-enabled
+ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 mkdir -p /run/fcgiwrap
 chown www-data:www-data /run/fcgiwrap
