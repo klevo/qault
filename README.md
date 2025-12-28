@@ -1,6 +1,8 @@
 # qault
 
-Personal, post-quantum-conscious keychain/password manager written in Go using standard library crypto.
+Personal, post-quantum-conscious keychain/password manager written in Go, with a beautiful TUI and using standard library crypto.
+
+<img width="1112" height="699" alt="qault-tui" src="https://github.com/user-attachments/assets/b705c2e5-14b0-4919-9f13-04b9f099beaa" />
 
 This project is not intended for production use and is published for research purposes only.
 
