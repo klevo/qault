@@ -175,6 +175,13 @@ Run `go run ./cmd/qault -- list` (or any other subcommand) to exercise the CLI d
 go test ./...
 ```
 
+### Upgrading dependencies
+
+```sh
+go get -u ./...
+go mod tidy 
+```
+
 ### HTTP git server for testing pushes
 
 Build and run a minimal HTTP git server with basic auth:
